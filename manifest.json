@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "moo.webcamtuner",
+  "name": "WebcamTuner",
+  "version": "0.1.0",
+  "author": "Jason Benjamin Ziegler Sr",
+  "license": "Apache-2.0",
+  "description": "Persistent framing and camera profiles. Initial design prototype; virtual output and background processing are planned.",
+  "kinds": ["bar-widget"],
+  "entryPoints": { "barWidget": "BarWidget.qml" },
+  "barWidget": { "displayName": "WebcamTuner", "description": "Frame a camera and save appearance profiles", "category": "Devices", "allowMultiple": false, "defaultSection": "right" }
+}

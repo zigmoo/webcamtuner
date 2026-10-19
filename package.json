@@ -1,0 +1,15 @@
+{
+  "name": "webcamtuner",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Persistent webcam framing and appearance for the Omarchy desktop",
+  "scripts": {
+    "build": "tsc && bun build src/cli.ts --target node --outfile dist/cli.js",
+    "check": "tsc --noEmit",
+    "test": "npm run build && node --test tests/*.test.mjs",
+    "stage": "python3 bin/stage.py"
+  },
+  "dependencies": { "incur": "0.5.1" },
+  "devDependencies": { "@types/node": "^25.0.0", "typescript": "^5.9.3" }
+}

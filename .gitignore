@@ -1,0 +1,5 @@
+node_modules/
+dist/
+package/
+*.png
+__pycache__/
