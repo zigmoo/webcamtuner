@@ -2,7 +2,7 @@ import { Cli, z } from 'incur'
 import { execFileSync } from 'node:child_process'
 import { readStore, saveStore, storePath, cropPixels } from './profiles.js'
 
-const cli = Cli.create('webcamtuner', { version: '0.1.0', description: 'WebcamTuner design prototype: inspect and persist camera framing profiles. No capture starts automatically.' })
+const cli = Cli.create('webcamtuner', { version: '0.2.0', description: 'WebcamTuner preview: persist camera framing and background profiles. No capture starts automatically.' })
 cli.command('read', { description: 'Read profiles and their revision without starting capture', run: () => readStore() })
 cli.command('save', {
   description: 'Validate, atomically save, and read back profiles; rejects concurrent edits',
@@ -14,7 +14,7 @@ cli.command('plan', {
   options: z.object({ width: z.number().int().min(2).max(16384).default(1920), height: z.number().int().min(2).max(16384).default(1080) }),
   run: c => {
     const store = readStore(), profile = store.profiles.find(p => p.id === store.activeProfile)!
-    return { profile, crop: cropPixels(profile.crop, c.options.width, c.options.height), output: 'not-implemented', backgrounds: 'preferences-only' }
+    return { profile, crop: cropPixels(profile.crop, c.options.width, c.options.height), output: 'not-implemented', backgrounds: 'local-preview' }
   },
 })
 cli.command('remote', {
@@ -27,7 +27,7 @@ cli.command('remote', {
 })
 cli.command('doctor', {
   description: 'Report prototype capabilities and profile path',
-  run: () => ({ profiles: storePath(), cropPreview: true, profilePersistence: true, virtualCamera: false, backgroundProcessing: false, remoteDiscovery: 'optional webcam_tool adapter', remoteCapture: false }),
+  run: () => ({ profiles: storePath(), cropPreview: true, profilePersistence: true, virtualCamera: false, backgroundProcessing: 'local-preview', previewDependencies: ['python3', 'OpenCV', 'NumPy', 'Pillow'], remoteDiscovery: 'optional webcam_tool adapter', remoteCapture: false }),
 })
 export default cli
 cli.serve()

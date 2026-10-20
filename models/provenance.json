@@ -1,0 +1,8 @@
+{
+  "project": "OpenCV Zoo PPHumanSeg",
+  "source": "https://media.githubusercontent.com/media/opencv/opencv_zoo/2027dd2f5a8a5746b5d4964900a0465afc6d3a53/models/human_segmentation_pphumanseg/human_segmentation_pphumanseg_2023mar.onnx",
+  "commit": "2027dd2f5a8a5746b5d4964900a0465afc6d3a53",
+  "sha256": "552d8a984054e59b5d773d24b9b12022b22046ceb2bbc4c9aaeaceb36a9ddf24",
+  "size": 6163938,
+  "license": "Apache-2.0"
+}

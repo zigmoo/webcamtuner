@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import QtQuick.Dialogs
 import QtMultimedia
 
 Rectangle {
@@ -28,6 +29,17 @@ Rectangle {
     property string savedCamera: ""
     property string sourceHost: ""
     property string sourceKind: "local"
+    readonly property bool imageReady: backgroundImage.status === Image.Ready
+    readonly property string backgroundFeedback: {
+        if (backgroundMode === "blur") return previewOn ? qsTr("Blur is applied to the camera background.") : qsTr("Preview camera to see background blur.")
+        if (backgroundMode !== "image") return ""
+        if (imagePath.trim() === "") return qsTr("Choose an image or paste its absolute path.")
+        if (backgroundUrl(imagePath) === "") return qsTr("Use a local image with an absolute path.")
+        if (backgroundImage.status === Image.Loading) return qsTr("Loading background image…")
+        if (backgroundImage.status === Image.Error) return qsTr("Cannot load this image. Check its path, permissions, and format.")
+        if (imageReady) return previewOn ? qsTr("Image loaded. Applying it to the camera preview.") : qsTr("Image loaded. Preview camera to see it behind you.")
+        return qsTr("Loading background image…")
+    }
     signal request(string action, var args)
     readonly property var cameras: devices.videoInputs
     readonly property real cropFraction: 1 / zoom
@@ -39,6 +51,26 @@ Rectangle {
         wrapMode: Text.WordWrap
     }
     function mark() { dirty = true; message = qsTr("Unsaved changes") }
+    function backgroundUrl(path) {
+        var value = path.trim()
+        try {
+            if (value.indexOf("file://localhost/") === 0) value = decodeURIComponent(value.slice(16))
+            else if (value.indexOf("file:///") === 0) value = decodeURIComponent(value.slice(7))
+        } catch (error) { return "" }
+        if (value.indexOf("/") !== 0) return ""
+        return "file://" + value.split("/").map(encodeURIComponent).join("/")
+    }
+    function chooseBackground(path) {
+        if (path.indexOf("file:///") === 0) path = decodeURIComponent(path.slice(7))
+        imagePath = path
+        backgroundMode = "image"
+        mark()
+    }
+    function previewSettings() {
+        if (backgroundMode === "image" && !imageReady) return null
+        return { camera: savedCamera, crop: { zoom: zoom, centerX: centerX, centerY: centerY },
+            background: { mode: backgroundMode, imagePath: imagePath } }
+    }
     function frame(z, x, y) {
         zoom = Math.max(1, Math.min(4, z))
         var edge = 0.5 / zoom
@@ -50,6 +82,7 @@ Rectangle {
         if (!document || !document.profiles[index]) return
         profileIndex = index
         var p = document.profiles[index]
+        if (savedCamera !== p.source.camera) previewOn = false
         zoom = p.crop.zoom; centerX = p.crop.centerX; centerY = p.crop.centerY
         profileName = p.name; backgroundMode = p.background.mode; imagePath = p.background.imagePath
         savedCamera = p.source.camera; sourceHost = p.source.host; sourceKind = p.source.kind
@@ -61,7 +94,7 @@ Rectangle {
             document = result
             var index = result.profiles.findIndex(p => p.id === result.activeProfile)
             restore(Math.max(0, index))
-            message = action === "save" ? qsTr("Saved to disk and verified · revision %1").arg(result.revision) : qsTr("Profile restored from disk")
+            message = action === "save" ? qsTr("Saved to disk and verified · revision %1").arg(result.revision) : result.revision === 0 ? qsTr("New profile. Save to keep your settings.") : qsTr("Profile restored from disk")
         } else if (action === "remote") {
             var items = Array.isArray(result) ? result : (result.cameras || result.hosts || [])
             remoteSummary = items.map(p => p.name || p.hostname || p.host || p.id).join("\n") || JSON.stringify(result).slice(0, 500)
@@ -90,17 +123,19 @@ Rectangle {
         restore(next.profiles.length - 1); mark()
     }
     MediaDevices { id: devices }
-    Camera {
-        id: camera
+    Loader {
+        id: processor
         active: root.previewOn && root.panelOpen && root.sourceKind === "local" && !root.testing
-        cameraDevice: {
-            for (var i = 0; i < root.cameras.length; i++)
-                if (String(root.cameras[i].id) === root.savedCamera) return root.cameras[i]
-            return devices.defaultVideoInput
+        source: Qt.resolvedUrl("ProcessedPreview.qml")
+        onLoaded: {
+            item.configuration = Qt.binding(function() { return root.previewSettings() })
+            item.active = true
         }
-        onErrorOccurred: function(error, errorString) { root.previewOn = false; root.message = errorString }
     }
-    CaptureSession { camera: camera; videoOutput: video }
+    Connections {
+        target: processor.item
+        function onFailed(message) { root.previewOn = false; root.message = message }
+    }
     ScrollView {
         anchors.fill: parent
         anchors.margins: 22
@@ -114,7 +149,7 @@ Rectangle {
                 LabelText { text: "WebcamTuner"; font.pixelSize: 26; font.bold: true; Layout.fillWidth: true }
                 LabelText { text: qsTr("DESIGN PREVIEW"); color: root.accent; font.pixelSize: 11; font.letterSpacing: 1.5 }
             }
-            LabelText { text: qsTr("Your framing. Saved once. Ready for every call."); color: "#a9b4c1"; Layout.fillWidth: true }
+            LabelText { text: qsTr("Frame your camera. Choose a background. Save your look."); color: "#a9b4c1"; Layout.fillWidth: true }
             RowLayout {
                 Layout.fillWidth: true
                 ComboBox {
@@ -148,26 +183,51 @@ Rectangle {
                 id: stage
                 Layout.fillWidth: true; Layout.preferredHeight: width * 9 / 16
                 color: "#0e131b"; clip: true
+                Image {
+                    id: backgroundImage
+                    objectName: "backgroundImage"
+                    anchors.fill: parent
+                    source: root.backgroundMode === "image" ? root.backgroundUrl(root.imagePath) : ""
+                    fillMode: Image.PreserveAspectCrop
+                    asynchronous: true
+                    autoTransform: true
+                    sourceSize.width: 1280
+                    sourceSize.height: 720
+                    visible: root.backgroundMode === "image" && !root.previewOn
+                }
                 Item {
                     id: source
+                    visible: !root.previewOn || root.testing
                     width: stage.width * root.zoom; height: stage.height * root.zoom
                     x: stage.width / 2 - root.centerX * width
                     y: stage.height / 2 - root.centerY * height
                     Rectangle {
                         anchors.fill: parent
-                        gradient: Gradient { GradientStop { position: 0; color: "#314d53" } GradientStop { position: 1; color: "#17232c" } }
-                        Repeater {
-                            model: 9
-                            Rectangle { required property int index; x: source.width * (index + 1) / 10; width: 1; height: source.height; color: "#52676c"; opacity: 0.35 }
+                        color: "transparent"
+                        Rectangle {
+                            anchors.fill: parent
+                            visible: root.backgroundMode !== "image" || !root.imageReady
+                            gradient: Gradient { GradientStop { position: 0; color: "#314d53" } GradientStop { position: 1; color: "#17232c" } }
+                            Repeater {
+                                model: 9
+                                Rectangle { required property int index; x: source.width * (index + 1) / 10; width: 1; height: source.height; color: "#52676c"; opacity: 0.35 }
+                            }
                         }
                         Rectangle { x: parent.width * 0.43; y: parent.height * 0.24; width: parent.width * 0.14; height: width; radius: width / 2; color: "#b3c8c4" }
                         Rectangle { x: parent.width * 0.30; y: parent.height * 0.53; width: parent.width * 0.40; height: parent.height * 0.65; radius: width * 0.3; color: "#88a5a3" }
                     }
-                    VideoOutput { id: video; anchors.fill: parent; visible: camera.active; fillMode: VideoOutput.PreserveAspectCrop }
+                }
+                Image {
+                    objectName: "processedFrame"
+                    anchors.fill: parent
+                    visible: root.previewOn
+                    source: processor.item ? processor.item.frameUrl : ""
+                    cache: false
+                    fillMode: Image.PreserveAspectFit
                 }
                 LabelText {
                     anchors.left: parent.left; anchors.top: parent.top; anchors.margins: 12
-                    text: camera.active ? qsTr("LOCAL PREVIEW · crop only") : qsTr("FRAMING TEST CARD · camera off")
+                    text: root.previewOn ? (processor.item && processor.item.frameUrl !== "" ? qsTr("PROCESSED CAMERA PREVIEW") : qsTr("STARTING CAMERA…")) : qsTr("FRAMING TEST CARD · camera off")
                     font.pixelSize: 10; font.bold: true
                 }
                 LabelText { anchors.right: parent.right; anchors.bottom: parent.bottom; anchors.margins: 12; text: root.zoom.toFixed(2) + "×"; font.bold: true }
@@ -190,7 +250,7 @@ Rectangle {
                 LabelText { text: qsTr("Drag the image to frame your shot. Scroll to zoom."); color: "#a9b4c1"; Layout.fillWidth: true }
                 Button {
                     text: root.previewOn ? qsTr("Camera off") : qsTr("Preview camera")
-                    enabled: root.savedCamera !== "" && root.sourceKind === "local" && !root.testing
+                    enabled: root.savedCamera !== "" && root.sourceKind === "local" && !root.testing && (root.previewOn || root.backgroundMode !== "image" || root.imageReady)
                     onClicked: root.previewOn = !root.previewOn
                 }
             }
@@ -209,13 +269,19 @@ Rectangle {
                         onClicked: { root.backgroundMode = modelData.mode; root.mark() }
                     }
                 }
-                LabelText { text: qsTr("Preferences only in this prototype"); color: "#bdc5cf"; font.pixelSize: 11; Layout.fillWidth: true }
+                LabelText { text: qsTr("Local camera effects"); color: "#bdc5cf"; font.pixelSize: 11; Layout.fillWidth: true }
             }
-            TextField {
+            RowLayout {
                 Layout.fillWidth: true; visible: root.backgroundMode === "image"
-                text: root.imagePath; placeholderText: qsTr("Background image path — processing comes next")
-                onTextEdited: { root.imagePath = text; root.mark() }
+                TextField {
+                    objectName: "backgroundPath"
+                    Layout.fillWidth: true
+                    text: root.imagePath; placeholderText: qsTr("Paste the absolute path to your background image")
+                    onTextEdited: root.chooseBackground(text)
+                }
+                Button { text: qsTr("Browse…"); onClicked: imageDialog.open() }
             }
+            LabelText { objectName: "backgroundFeedback"; visible: root.backgroundMode !== "none"; text: root.backgroundFeedback; color: root.backgroundMode === "image" && !root.imageReady ? "#f1b58a" : root.accent; Layout.fillWidth: true }
             CheckBox {
                 objectName: "restoreToggle"
                 text: qsTr("Restore this profile when WebcamTuner starts")
@@ -224,7 +290,7 @@ Rectangle {
             }
             LabelText { text: qsTr("Output: not broadcasting. Virtual-camera processing is the next implementation stage."); color: root.accent; Layout.fillWidth: true }
             RowLayout {
-                Button { objectName: "saveButton"; text: root.busy ? qsTr("Working…") : qsTr("Save profile"); highlighted: true; enabled: root.document !== null && root.dirty && !root.busy && root.profileName.trim() !== ""; onClicked: root.save() }
+                Button { objectName: "saveButton"; text: root.busy ? qsTr("Working…") : qsTr("Save profile"); highlighted: true; enabled: root.document !== null && root.dirty && !root.busy && root.profileName.trim() !== "" && (root.backgroundMode !== "image" || root.imageReady); onClicked: root.save() }
                 Button { text: qsTr("Reload saved"); enabled: !root.busy; onClicked: root.dirty ? discardDialog.open() : root.request("read", []) }
                 Item { Layout.fillWidth: true }
                 Button { text: qsTr("Remote cameras"); enabled: !root.busy; onClicked: root.request("remote", []) }
@@ -240,5 +306,11 @@ Rectangle {
         modal: true
         standardButtons: Dialog.Discard | Dialog.Cancel
         onDiscarded: root.request("read", [])
+    }
+    FileDialog {
+        id: imageDialog
+        title: qsTr("Choose a webcam background")
+        nameFilters: [qsTr("Images (*.jpg *.jpeg *.png *.webp *.bmp)"), qsTr("All files (*)")]
+        onAccepted: root.chooseBackground(String(selectedFile))
     }
 }

@@ -11,8 +11,16 @@ BarWidget {
     implicitHeight: button.implicitHeight
     readonly property bool opened: panel.open
     property bool popoutSwitchClosing: false
-    function open() { panel.open = true; if (!editor.document) bridge.request("read", []) }
-    function close() { panel.open = false }
+    function open() {
+        if (bar && typeof bar.moduleWidgets === "function") {
+            var others = bar.moduleWidgets(moduleName)
+            for (var i = 0; i < others.length; i++)
+                if (others[i] && others[i] !== root && typeof others[i].close === "function") others[i].close()
+        }
+        panel.open = true
+        if (!editor.document) bridge.request("read", [])
+    }
+    function close() { editor.previewOn = false; panel.open = false }
     function toggle() { opened ? close() : open() }
     function closeForPopoutSwitch() { close() }
     BarIconButton {
