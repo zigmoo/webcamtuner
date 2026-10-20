@@ -9,6 +9,7 @@ scratch = Path(os.environ["WEBCAMTUNER_TEST_ROOT"])
 scratch.mkdir(parents=True, exist_ok=True)
 image = os.environ["WEBCAMTUNER_ACCEPTANCE_IMAGE"]
 camera = os.environ.get("WEBCAMTUNER_ACCEPTANCE_CAMERA", "/dev/video0")
+expected_size = [int(v) for v in os.environ.get("WEBCAMTUNER_EXPECT_CAPTURE", "1920x1080").split("x")]
 settings = {"camera": camera, "crop": {"zoom": 1, "centerX": 0.5, "centerY": 0.5}, "background": {"mode": "image", "imagePath": image}}
 harness = scratch / "LivePreviewCheck.qml"
 harness.write_text('''import QtQuick
@@ -19,7 +20,8 @@ ShellRoot {
     property int frames: 0
     property int decodedFrames: 0
     property var modes: ["image", "blur", "none"]
-    Image {
+    property var expected: ''' + json.dumps(expected_size) + '''
+    Tuner.PreviewFrame {
         source: preview.frameUrl
         cache: false
         onStatusChanged: if (status === Image.Ready) decodedFrames++
@@ -29,11 +31,15 @@ ShellRoot {
         configuration: ''' + json.dumps(settings) + '''
         Component.onCompleted: active = true
         onFailed: function(message) { console.log("FAIL: " + message); active = false; Qt.quit() }
-        onFrameUrlChanged: {
-            if (frameUrl === "" || effect !== modes[phase]) return
+        onFrameReceived: function(mode) {
+            if (mode !== modes[phase]) return
+            if (format.captureWidth !== expected[0] || format.captureHeight !== expected[1]) {
+                console.log("FAIL: wrong capture size " + format.captureWidth + "x" + format.captureHeight)
+                active = false; Qt.quit(); return
+            }
             frames++
             if (frames < 4) return
-            console.log("Verified processed camera frames: " + modes[phase])
+            console.log("Verified processed camera frames: " + modes[phase] + " · capture " + format.captureWidth + "x" + format.captureHeight + " at " + format.captureFps + " fps")
             frames = 0; phase++
             if (phase === modes.length) {
                 if (decodedFrames === 0) { console.log("FAIL: processed frames did not decode in QML"); active = false; Qt.quit(); return }

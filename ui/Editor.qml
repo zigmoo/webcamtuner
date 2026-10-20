@@ -43,8 +43,9 @@ Rectangle {
     signal request(string action, var args)
     readonly property var cameras: devices.videoInputs
     readonly property real cropFraction: 1 / zoom
-    readonly property int cropWidth: Math.floor(1920 / zoom / 2) * 2
-    readonly property int cropHeight: Math.floor(1080 / zoom / 2) * 2
+    readonly property var captureFormat: processor.item ? processor.item.format : ({})
+    readonly property int cropWidth: captureFormat.captureWidth ? Math.floor(captureFormat.captureWidth / zoom / 2) * 2 : 0
+    readonly property int cropHeight: captureFormat.captureHeight ? Math.floor(captureFormat.captureHeight / zoom / 2) * 2 : 0
 
     component LabelText: Text {
         color: "#e9ecef"; font.pixelSize: 14; textFormat: Text.PlainText
@@ -217,13 +218,11 @@ Rectangle {
                         Rectangle { x: parent.width * 0.30; y: parent.height * 0.53; width: parent.width * 0.40; height: parent.height * 0.65; radius: width * 0.3; color: "#88a5a3" }
                     }
                 }
-                Image {
+                PreviewFrame {
                     objectName: "processedFrame"
                     anchors.fill: parent
                     visible: root.previewOn
                     source: processor.item ? processor.item.frameUrl : ""
-                    cache: false
-                    fillMode: Image.PreserveAspectFit
                 }
                 LabelText {
                     anchors.left: parent.left; anchors.top: parent.top; anchors.margins: 12
@@ -255,7 +254,11 @@ Rectangle {
                 }
             }
             LabelText {
-                text: qsTr("1080p reference: this crop retains about %1 × %2 pixels. Software zoom cannot add detail.").arg(root.cropWidth).arg(root.cropHeight)
+                text: root.cropWidth > 0
+                    ? qsTr("Capture %1 × %2 at %3 fps · crop %4 × %5 · scaled preview %6 × %7")
+                        .arg(root.captureFormat.captureWidth).arg(root.captureFormat.captureHeight).arg(Math.round(root.captureFormat.captureFps))
+                        .arg(root.cropWidth).arg(root.cropHeight).arg(root.captureFormat.previewWidth).arg(root.captureFormat.previewHeight)
+                    : qsTr("Start preview to see the negotiated capture resolution and available crop detail.")
                 font.pixelSize: 12; color: "#a9b4c1"; Layout.fillWidth: true
             }
             Rectangle { Layout.fillWidth: true; height: 1; color: "#39414b" }

@@ -9,6 +9,7 @@ import math
 from pathlib import Path
 import re
 import signal
+import subprocess
 import sys
 import threading
 import time
@@ -16,9 +17,10 @@ from urllib.parse import unquote, urlparse
 
 import cv2
 import numpy as np
+import onnxruntime as ort
 from PIL import Image, ImageOps
 
-MODEL = Path(__file__).resolve().parent.parent / "models" / "human_segmentation_pphumanseg_2023mar.onnx"
+MODEL = Path(__file__).resolve().parent.parent / "models" / "rvm" / "rvm_mobilenetv3_fp32.onnx"
 OUTPUT_LOCK = threading.Lock()
 
 
@@ -77,35 +79,90 @@ def fit_cover(image: np.ndarray, width: int, height: int) -> np.ndarray:
     return sized[y:y + height, x:x + width]
 
 
-def crop_frame(frame: np.ndarray, crop: dict) -> np.ndarray:
-    height, width = frame.shape[:2]
+def crop_bounds(width: int, height: int, crop: dict) -> tuple[int, int, int, int]:
     w = max(2, math.floor(width / crop["zoom"] / 2) * 2)
     h = max(2, math.floor(height / crop["zoom"] / 2) * 2)
     x = int(max(0, min(width - w, crop["centerX"] * width - w / 2)))
     y = int(max(0, min(height - h, crop["centerY"] * height - h / 2)))
-    return cv2.resize(frame[y:y + h, x:x + w], (640, 360))
+    return x, y, w, h
+
+
+def crop_frame(frame: np.ndarray, crop: dict) -> np.ndarray:
+    height, width = frame.shape[:2]
+    x, y, w, h = crop_bounds(width, height, crop)
+    scale = min(960 / w, 540 / h, 1)
+    return cv2.resize(frame[y:y + h, x:x + w], (max(2, round(w * scale)), max(2, round(h * scale))))
+
+
+def capture_modes(text: str) -> list[dict]:
+    modes, fourcc, size = [], None, None
+    for line in text.splitlines():
+        match = re.search(r"\[\d+\]: '([^']+)'", line)
+        if match:
+            fourcc, size = match[1], None
+        match = re.search(r"Size: Discrete (\d+)x(\d+)", line)
+        if match:
+            size = (int(match[1]), int(match[2]))
+        match = re.search(r"\(([\d.]+) fps\)", line)
+        if match and size and fourcc in ("MJPG", "YUYV", "NV12"):
+            modes.append({"width": size[0], "height": size[1], "fps": float(match[1]), "fourcc": fourcc})
+    return modes
+
+
+def choose_capture_mode(modes: list[dict]) -> dict:
+    suitable = [m for m in modes if m["fps"] >= 15 and m["width"] <= 3840 and m["height"] <= 2160]
+    if not suitable:
+        raise ValueError("No supported camera mode at 15 fps or above was found")
+    # Prefer the largest supported 16:9 source, including UHD on a BRIO. MJPEG
+    # avoids exhausting USB bandwidth at 4K. The negotiated mode is checked below.
+    widescreen = [m for m in suitable if abs(m["width"] / m["height"] - 16 / 9) < 0.02]
+    return max(widescreen or suitable, key=lambda m: (m["width"] * m["height"], m["fourcc"] == "MJPG", min(m["fps"], 30)))
+
+
+class MaskStabilizer:
+    """Smooth classification noise on stationary pixels, while following real motion quickly."""
+    def __init__(self):
+        self.previous: np.ndarray | None = None
+        self.gray: np.ndarray | None = None
+
+    def update(self, frame: np.ndarray, mask: np.ndarray) -> np.ndarray:
+        gray = cv2.GaussianBlur(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY), (5, 5), 0)
+        if self.previous is None or self.previous.shape != mask.shape:
+            output = mask
+        else:
+            movement = cv2.absdiff(gray, self.gray).astype(np.float32)
+            movement = cv2.GaussianBlur(movement, (5, 5), 0)
+            weight = (0.25 + 0.65 * np.clip(movement / 20, 0, 1))[..., None]
+            output = self.previous * (1 - weight) + mask * weight
+        self.previous, self.gray = output, gray
+        return output
 
 
 class Segmenter:
     def __init__(self, model: Path = MODEL):
         if not model.is_file():
             raise ValueError("Person segmentation model is missing; reinstall WebcamTuner")
-        self.net = cv2.dnn.readNetFromONNX(str(model))
+        options = ort.SessionOptions()
+        options.intra_op_num_threads = 2
+        options.inter_op_num_threads = 1
+        self.net = ort.InferenceSession(str(model), sess_options=options, providers=["CPUExecutionProvider"])
+        self.reset()
+
+    def reset(self):
+        self.recurrent = [np.zeros((1, 1, 1, 1), dtype=np.float32) for _ in range(4)]
+        self.stabilizer = MaskStabilizer()
 
     def mask(self, frame: np.ndarray) -> np.ndarray:
-        # OpenCV Zoo PPHumanSeg expects RGB NCHW pixels normalized to [-1, 1].
-        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        data = cv2.resize(rgb, (192, 192)).astype(np.float32) / 127.5 - 1
-        self.net.setInput(cv2.dnn.blobFromImage(data))
-        classes = self.net.forward()[0]
-        if classes.shape[0] != 2:
-            raise RuntimeError("Unexpected person segmentation model output")
-        if classes.min() < 0 or classes.max() > 1:
-            values = np.exp(classes - classes.max(axis=0, keepdims=True))
-            classes = values / values.sum(axis=0, keepdims=True)
-        alpha = np.clip((classes[1] - 0.25) / 0.5, 0, 1)
-        alpha = cv2.resize(alpha, (frame.shape[1], frame.shape[0]))
-        return cv2.GaussianBlur(alpha, (0, 0), 1.0)[..., None]
+        # Recycle all four RVM states. Classifying independent frames discarded
+        # the temporal context needed for stable heads, hair and glasses.
+        scale = min(960 / frame.shape[1], 540 / frame.shape[0], 1)
+        low = cv2.resize(frame, (round(frame.shape[1] * scale), round(frame.shape[0] * scale)))
+        blob = cv2.dnn.blobFromImage(low, 1 / 255, swapRB=True)
+        inputs = {"src": blob, "downsample_ratio": np.array([0.5], dtype=np.float32)}
+        inputs.update({f"r{i + 1}i": value for i, value in enumerate(self.recurrent)})
+        _, alpha, *self.recurrent = self.net.run(None, inputs)
+        alpha = self.stabilizer.update(low, np.clip(alpha[0, 0], 0, 1)[..., None])
+        return cv2.resize(alpha, (frame.shape[1], frame.shape[0]))[..., None]
 
 
 def composite(frame: np.ndarray, mask: np.ndarray, mode: str, background: np.ndarray | None) -> np.ndarray:
@@ -144,14 +201,19 @@ def run(initial: dict, frame_limit: int = 0) -> None:
 
     background = load_background(current["background"]["imagePath"]) if current["background"]["mode"] == "image" else None
     segmenter = Segmenter() if current["background"]["mode"] != "none" else None
+    listing = subprocess.check_output(["v4l2-ctl", "-d", current["camera"], "--list-formats-ext"], text=True, timeout=5)
+    selected = choose_capture_mode(capture_modes(listing))
     capture = cv2.VideoCapture(current["camera"], cv2.CAP_V4L2)
     try:
-        capture.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
-        capture.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
-        capture.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+        capture.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*selected["fourcc"]))
+        capture.set(cv2.CAP_PROP_FRAME_WIDTH, selected["width"])
+        capture.set(cv2.CAP_PROP_FRAME_HEIGHT, selected["height"])
+        capture.set(cv2.CAP_PROP_FPS, min(selected["fps"], 30))
         capture.set(cv2.CAP_PROP_BUFFERSIZE, 1)
         if not capture.isOpened():
             raise RuntimeError("Cannot open this camera. Close other camera previews and check its privacy switch.")
+        if (int(capture.get(cv2.CAP_PROP_FRAME_WIDTH)), int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT))) != (selected["width"], selected["height"]):
+            raise RuntimeError("Camera did not accept its selected full-resolution mode")
         threading.Thread(target=read_updates, daemon=True).start()
         count = 0
         while alive.is_set():
@@ -165,20 +227,32 @@ def run(initial: dict, frame_limit: int = 0) -> None:
                     candidate = load_background(update["background"]["imagePath"]) if update["background"]["mode"] == "image" else None
                     if update["background"]["mode"] != "none" and segmenter is None:
                         segmenter = Segmenter()
+                    if current["background"]["mode"] == "none" and update["background"]["mode"] != "none":
+                        segmenter.reset()
                     current, background = update, candidate
                 except (ValueError, OSError) as error:
                     emit({"error": str(error), "retainedPreviousEffect": True})
             okay, frame = capture.read()
             if not okay:
                 raise RuntimeError("Camera stopped delivering frames; check its privacy switch and connection")
-            frame = crop_frame(frame, current["crop"])
+            source_height, source_width = frame.shape[:2]
+            _, _, retained_width, retained_height = crop_bounds(source_width, source_height, current["crop"])
             mode = current["background"]["mode"]
             if mode != "none":
-                frame = composite(frame, segmenter.mask(frame), mode, background)
+                # Detect the person in the full camera view. Tight user crops can otherwise
+                # remove the shoulders/context the model needs to classify a head correctly.
+                alpha = segmenter.mask(frame)
+                alpha = crop_frame(alpha, current["crop"])[..., None]
+                frame = crop_frame(frame, current["crop"])
+                frame = composite(frame, alpha, mode, background)
+            else:
+                frame = crop_frame(frame, current["crop"])
             okay, encoded = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 82])
             if not okay:
                 raise RuntimeError("Could not encode the processed preview")
-            emit({"frame": base64.b64encode(encoded).decode("ascii"), "effect": mode, "width": 640, "height": 360})
+            emit({"frame": base64.b64encode(encoded).decode("ascii"), "effect": mode, "width": frame.shape[1], "height": frame.shape[0],
+                  "captureWidth": source_width, "captureHeight": source_height, "captureFps": capture.get(cv2.CAP_PROP_FPS),
+                  "retainedWidth": retained_width, "retainedHeight": retained_height})
             count += 1
             if frame_limit and count >= frame_limit:
                 break
@@ -194,6 +268,6 @@ if __name__ == "__main__":
     args = parser.parse_args()
     try:
         run(json.loads(args.request), args.frames)
-    except (ValueError, RuntimeError, OSError, cv2.error) as error:
+    except (ValueError, RuntimeError, OSError, cv2.error, subprocess.SubprocessError) as error:
         emit({"error": str(error)})
         raise SystemExit(1)

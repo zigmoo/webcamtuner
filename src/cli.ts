@@ -2,7 +2,7 @@ import { Cli, z } from 'incur'
 import { execFileSync } from 'node:child_process'
 import { readStore, saveStore, storePath, cropPixels } from './profiles.js'
 
-const cli = Cli.create('webcamtuner', { version: '0.2.0', description: 'WebcamTuner preview: persist camera framing and background profiles. No capture starts automatically.' })
+const cli = Cli.create('webcamtuner', { version: '0.3.0', description: 'WebcamTuner preview: persist camera framing and background profiles. No capture starts automatically.' })
 cli.command('read', { description: 'Read profiles and their revision without starting capture', run: () => readStore() })
 cli.command('save', {
   description: 'Validate, atomically save, and read back profiles; rejects concurrent edits',
@@ -27,7 +27,7 @@ cli.command('remote', {
 })
 cli.command('doctor', {
   description: 'Report prototype capabilities and profile path',
-  run: () => ({ profiles: storePath(), cropPreview: true, profilePersistence: true, virtualCamera: false, backgroundProcessing: 'local-preview', previewDependencies: ['python3', 'OpenCV', 'NumPy', 'Pillow'], remoteDiscovery: 'optional webcam_tool adapter', remoteCapture: false }),
+  run: () => ({ profiles: storePath(), cropPreview: true, profilePersistence: true, virtualCamera: false, backgroundProcessing: 'local-preview', matting: 'RVM MobileNetV3 with recurrent states', capture: 'largest supported 16:9 mode up to UHD 4K', previewDependencies: ['Python runtime from npm run setup:preview', 'OpenCV', 'NumPy', 'Pillow', 'ONNX Runtime 1.31.0'], remoteDiscovery: 'optional webcam_tool adapter', remoteCapture: false }),
 })
 export default cli
 cli.serve()

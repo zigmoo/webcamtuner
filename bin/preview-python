@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+set -euo pipefail
+WEBCAMTUNER_PYTHON="${XDG_DATA_HOME:-$HOME/.local/share}/webcamtuner/runtime/bin/python"
+if [[ ! -x "$WEBCAMTUNER_PYTHON" ]]; then
+  printf '%s\n' '{"error":"WebcamTuner preview runtime is missing. Run npm run setup:preview in the source project."}'
+  exit 1
+fi
+exec "$WEBCAMTUNER_PYTHON" "$@"

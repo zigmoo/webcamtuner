@@ -59,6 +59,54 @@ class BackgroundTests(unittest.TestCase):
         self.assertGreaterEqual(float(mask.min()), 0)
         self.assertLessEqual(float(mask.max()), 1)
 
+    def test_mask_noise_is_damped_without_smearing_real_motion(self):
+        still = np.full((40, 60, 3), 80, dtype=np.uint8)
+        stable = preview.MaskStabilizer()
+        stable.update(still, np.full((40, 60, 1), 0.5, dtype=np.float32))
+        smoothed = stable.update(still, np.full((40, 60, 1), 0.9, dtype=np.float32))
+        self.assertAlmostEqual(float(smoothed.mean()), 0.6, places=5)
+        # A genuine frame change receives a fast update rather than the stationary blend.
+        moved = np.full_like(still, 180)
+        tracked = stable.update(moved, np.ones((40, 60, 1), dtype=np.float32))
+        self.assertGreater(float(tracked.mean()), 0.95)
+
+    def test_mask_and_camera_crop_share_the_same_region(self):
+        frame = np.zeros((720, 1280, 3), dtype=np.uint8)
+        mask = np.zeros((720, 1280, 1), dtype=np.float32)
+        frame[180:540, 320:960] = 255
+        mask[180:540, 320:960] = 1
+        crop = {"zoom": 2, "centerX": 0.5, "centerY": 0.5}
+        color = preview.crop_frame(frame, crop)
+        alpha = preview.crop_frame(mask, crop)
+        np.testing.assert_array_equal(color[..., 0] / 255, alpha)
+
+    def test_brio_uses_supported_uhd_and_laptop_keeps_1080p(self):
+        modes = [{"width": w, "height": h, "fps": 30, "fourcc": "MJPG"}
+                 for w, h in [(1280, 720), (1920, 1080), (3840, 2160), (4096, 2160)]]
+        best = preview.choose_capture_mode(modes)
+        self.assertEqual((best["width"], best["height"]), (3840, 2160))
+        laptop = preview.choose_capture_mode(modes[:2])
+        self.assertEqual((laptop["width"], laptop["height"]), (1920, 1080))
+        self.assertEqual(preview.crop_bounds(3840, 2160, {"zoom": 2, "centerX": 0.5, "centerY": 0.5})[2:], (1920, 1080))
+
+    def test_v4l2_inventory_retains_compressed_4k_modes(self):
+        modes = preview.capture_modes("""[0]: 'MJPG' (Motion-JPEG)
+Size: Discrete 3840x2160
+Interval: Discrete 0.033s (30.000 fps)
+[1]: 'YUYV' (YUYV 4:2:2)
+Size: Discrete 640x480
+Interval: Discrete 0.033s (30.000 fps)""")
+        self.assertEqual(preview.choose_capture_mode(modes)["width"], 3840)
+
+    def test_video_model_preserves_recurrent_states_between_frames(self):
+        segmenter = preview.Segmenter()
+        frame = np.full((360, 640, 3), 100, dtype=np.uint8)
+        segmenter.mask(frame)
+        self.assertTrue(all(value.size > 1 for value in segmenter.recurrent))
+        first = [value.copy() for value in segmenter.recurrent]
+        segmenter.mask(frame)
+        self.assertTrue(any(not np.array_equal(a, b) for a, b in zip(first, segmenter.recurrent)))
+
     def test_crop_before_composition_retains_expected_source_region(self):
         frame = np.zeros((720, 1280, 3), dtype=np.uint8)
         frame[180:540, 320:960] = (20, 70, 200)

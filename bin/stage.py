@@ -13,7 +13,11 @@ shutil.copytree(root / "ui", target / "ui", dirs_exist_ok=True)
 (target / "dist").mkdir(exist_ok=True)
 shutil.copy2(root / "bin" / "webcamtuner", target / "bin" / "webcamtuner")
 shutil.copy2(root / "bin" / "process_preview.py", target / "bin" / "process_preview.py")
-shutil.copytree(root / "models", target / "models", dirs_exist_ok=True)
+shutil.copy2(root / "bin" / "preview-python", target / "bin" / "preview-python")
+shutil.copy2(root / "bin" / "setup-preview", target / "bin" / "setup-preview")
+if (target / "models").exists():
+    shutil.rmtree(target / "models")
+shutil.copytree(root / "models", target / "models")
 shutil.copy2(root / "dist" / "cli.js", target / "dist" / "cli.js")
 for filename in ("README.md", "DESIGN.md", "LICENSE"):
     if (root / filename).exists():
