@@ -37,7 +37,7 @@ BarWidget {
         function minimize(): void { if (root.opened && !panel.collapsed) panel.toggleCollapse() }
         function status(): string {
             return JSON.stringify({ opened: root.opened, collapsed: panel.collapsed, width: panel.width, height: panel.height,
-                busy: panel.editor.busy, message: panel.editor.message,
+                busy: panel.editor.busy, dirty: panel.editor.dirty, message: panel.editor.message,
                 mirror: panel.editor.mirror, autostartCamera: panel.editor.autostartCamera, previewOn: panel.editor.previewOn,
                 revision: panel.editor.document ? panel.editor.document.revision : -1, broadcasting: false })
         }
