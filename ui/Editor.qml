@@ -425,7 +425,6 @@ Rectangle {
                 nextCheckState: function() { return checkState }
                 onClicked: root.toggleAutostart()
             }
-            LabelText { text: qsTr("Output: not broadcasting. Virtual-camera processing is the next implementation stage."); color: root.accent; Layout.fillWidth: true }
             RowLayout {
                 Button { objectName: "saveButton"; text: root.busy ? qsTr("Working…") : qsTr("Save profile"); highlighted: true; enabled: root.document !== null && root.dirty && !root.busy && root.profileName.trim() !== "" && (root.backgroundMode !== "image" || root.imageReady); onClicked: root.save() }
                 Button { text: qsTr("Reload saved"); enabled: !root.busy; onClicked: root.dirty ? discardDialog.open() : root.request("read", []) }
@@ -434,6 +433,26 @@ Rectangle {
             }
             LabelText { objectName: "saveStatus"; text: root.message; color: root.accent; Layout.fillWidth: true }
             LabelText { visible: root.remoteSummary !== ""; text: root.remoteSummary; Layout.fillWidth: true; font.pixelSize: 12 }
+            Rectangle { Layout.fillWidth: true; height: 1; color: "#39414b" }
+            LabelText { text: qsTr("Use in other apps"); font.bold: true }
+            LabelText { text: qsTr("Output: preview only"); color: root.accent; Layout.fillWidth: true }
+            LabelText {
+                text: qsTr("This version shows your processed camera here, but does not publish a WebcamTuner camera yet. Teams, Zoom, Meet and other webcam apps cannot receive these effects until virtual-camera output is added.")
+                Layout.fillWidth: true
+            }
+            LabelText {
+                text: qsTr("Once virtual-camera output is available:\n1. Start output in WebcamTuner.\n2. Open the other app’s video or camera settings and select WebcamTuner.\n3. Turn off that app’s background replacement and blur to use the look you set here.")
+                Layout.fillWidth: true
+            }
+            LabelText {
+                text: qsTr("For browser calls, allow the site to use your camera and select WebcamTuner. If the camera is missing, start output first, then reopen camera settings or restart the app.")
+                color: "#a9b4c1"; Layout.fillWidth: true
+            }
+            LabelText {
+                text: qsTr("Selecting Logitech BRIO or the laptop camera directly uses the original camera feed, bypassing WebcamTuner’s framing and backgrounds.")
+                color: "#a9b4c1"; Layout.fillWidth: true
+            }
+            Rectangle { Layout.fillWidth: true; height: 1; color: "#39414b" }
         }
     }
     Dialog {

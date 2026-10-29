@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "moo.webcamtuner",
   "name": "WebcamTuner",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "author": "Jason Benjamin Ziegler Sr",
   "license": "Apache-2.0 AND GPL-3.0-only",
   "description": "Persistent framing and profiles with local image/blur background preview. Virtual-camera output is planned.",

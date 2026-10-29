@@ -79,3 +79,7 @@ Each window open requests one preview start after the remembered camera is confi
 ## Floating palette controls (v0.6)
 
 A fixed 42-pixel title bar keeps the grip, WebcamTuner title, minimize/expand control, and close × visible above scrolling content. Drag the grip or title area to move the window. As in Revelator floating ActionPanel palettes, minimize collapses the body to its title bar; expand restores the previous size. A double-click on the drag area also toggles collapse. Preview keeps running while collapsed, and unsaved edits stay in memory. Close × hides the window and stops preview while keeping the draft for reopening through the bar icon. Opening from the bar expands a collapsed window.
+
+## Use in other apps guidance (v0.6.1)
+
+The editor includes a Use in other apps section below its profile controls. It identifies the current output as preview only and explains that no processed virtual webcam is published by this build. The guide describes selecting WebcamTuner in camera settings after virtual output is implemented and started, granting browser camera permission, disabling duplicate app background effects, and refreshing camera discovery. Choosing a physical BRIO or laptop camera bypasses WebcamTuner processing. These are instructions for the planned output flow, not a claim that the current preview is available to meeting apps.
