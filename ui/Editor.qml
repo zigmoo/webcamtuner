@@ -25,6 +25,8 @@ Rectangle {
     property string backgroundMode: "none"
     property string imagePath: ""
     property bool restoreOnStart: true
+    property bool mirror: true
+    property bool mirrorPending: false
     property string profileName: "Desk"
     property string savedCamera: ""
     property string sourceHost: ""
@@ -41,6 +43,7 @@ Rectangle {
         return qsTr("Loading background image…")
     }
     signal request(string action, var args)
+    signal moveRequested()
     readonly property var cameras: devices.videoInputs
     readonly property real cropFraction: 1 / zoom
     readonly property var captureFormat: processor.item ? processor.item.format : ({})
@@ -69,7 +72,7 @@ Rectangle {
     }
     function previewSettings() {
         if (backgroundMode === "image" && !imageReady) return null
-        return { camera: savedCamera, crop: { zoom: zoom, centerX: centerX, centerY: centerY },
+        return { camera: savedCamera, mirror: mirror, crop: { zoom: zoom, centerX: centerX, centerY: centerY },
             background: { mode: backgroundMode, imagePath: imagePath } }
     }
     function frame(z, x, y) {
@@ -88,11 +91,18 @@ Rectangle {
         profileName = p.name; backgroundMode = p.background.mode; imagePath = p.background.imagePath
         savedCamera = p.source.camera; sourceHost = p.source.host; sourceKind = p.source.kind
         restoreOnStart = p.restoreOnStart
+        mirror = p.mirror === undefined ? true : p.mirror
         dirty = false
     }
     function accept(action, result) {
         if (action === "read" || action === "save") {
             document = result
+            if (mirrorPending && action === "save") {
+                mirrorPending = false
+                mirror = result.profiles[profileIndex].mirror
+                message = qsTr("Mirror setting saved")
+                return
+            }
             var index = result.profiles.findIndex(p => p.id === result.activeProfile)
             restore(Math.max(0, index))
             message = action === "save" ? qsTr("Saved to disk and verified · revision %1").arg(result.revision) : result.revision === 0 ? qsTr("New profile. Save to keep your settings.") : qsTr("Profile restored from disk")
@@ -111,9 +121,22 @@ Rectangle {
         p.background = { mode: backgroundMode, imagePath: imagePath }
         p.source = { kind: sourceKind, host: sourceHost, camera: savedCamera }
         p.restoreOnStart = restoreOnStart
+        p.mirror = mirror
         next.activeProfile = p.id
         message = qsTr("Saving and verifying…")
         request("save", ["--document", JSON.stringify(next)])
+    }
+    function toggleMirror() {
+        if (!document || busy || mirrorPending) return
+        var next = JSON.parse(JSON.stringify(document))
+        next.profiles[profileIndex].mirror = !mirror
+        mirrorPending = true
+        message = qsTr("Saving mirror setting…")
+        request("save", ["--document", JSON.stringify(next)])
+    }
+    function fail(message) {
+        mirrorPending = false
+        root.message = message
     }
     function newProfile() {
         if (!document || dirty) return
@@ -147,7 +170,10 @@ Rectangle {
             spacing: 14
             RowLayout {
                 Layout.fillWidth: true
-                LabelText { text: "WebcamTuner"; font.pixelSize: 26; font.bold: true; Layout.fillWidth: true }
+                LabelText {
+                    text: "WebcamTuner"; font.pixelSize: 26; font.bold: true; Layout.fillWidth: true
+                    MouseArea { objectName: "windowDragHandle"; anchors.fill: parent; cursorShape: Qt.SizeAllCursor; onPressed: root.moveRequested() }
+                }
                 LabelText { text: qsTr("DESIGN PREVIEW"); color: root.accent; font.pixelSize: 11; font.letterSpacing: 1.5 }
             }
             LabelText { text: qsTr("Frame your camera. Choose a background. Save your look."); color: "#a9b4c1"; Layout.fillWidth: true }
@@ -199,6 +225,7 @@ Rectangle {
                 Item {
                     id: source
                     visible: !root.previewOn || root.testing
+                    transform: Scale { origin.x: stage.width / 2 - source.x; xScale: root.mirror ? -1 : 1 }
                     width: stage.width * root.zoom; height: stage.height * root.zoom
                     x: stage.width / 2 - root.centerX * width
                     y: stage.height / 2 - root.centerY * height
@@ -235,7 +262,7 @@ Rectangle {
                     property real startX; property real startY; property real startCX; property real startCY
                     cursorShape: root.zoom > 1 ? (pressed ? Qt.ClosedHandCursor : Qt.OpenHandCursor) : Qt.ArrowCursor
                     onPressed: function(mouse) { startX = mouse.x; startY = mouse.y; startCX = root.centerX; startCY = root.centerY }
-                    onPositionChanged: function(mouse) { if (pressed && root.zoom > 1) root.frame(root.zoom, startCX - (mouse.x - startX) / source.width, startCY - (mouse.y - startY) / source.height) }
+                    onPositionChanged: function(mouse) { if (pressed && root.zoom > 1) root.frame(root.zoom, startCX + (root.mirror ? 1 : -1) * (mouse.x - startX) / source.width, startCY - (mouse.y - startY) / source.height) }
                     onWheel: function(wheel) { root.frame(root.zoom + (wheel.angleDelta.y > 0 ? 0.1 : -0.1), root.centerX, root.centerY); wheel.accepted = true }
                 }
             }
@@ -245,6 +272,14 @@ Rectangle {
                 Button { text: qsTr("Reset frame"); onClicked: root.frame(1, 0.5, 0.5) }
             }
             RowLayout {
+                CheckBox {
+                    objectName: "mirrorToggle"
+                    text: root.mirrorPending ? qsTr("Mirror (saving…)") : qsTr("Mirror")
+                    checked: root.mirror
+                    enabled: root.document !== null && !root.busy && !root.mirrorPending
+                    nextCheckState: function() { return checkState }
+                    onClicked: root.toggleMirror()
+                }
                 Layout.fillWidth: true
                 LabelText { text: qsTr("Drag the image to frame your shot. Scroll to zoom."); color: "#a9b4c1"; Layout.fillWidth: true }
                 Button {

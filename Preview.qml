@@ -1,20 +1,18 @@
 import QtQuick
-import QtQuick.Controls
+import Quickshell
 import "ui" as Tuner
 
-ApplicationWindow {
-    id: window
-    width: 800; height: 960; visible: true
-    title: "WebcamTuner · design preview"
-    Tuner.Bridge {
-        id: bridge
-        onReceived: function(action, result) { editor.accept(action, result) }
-        onFailed: function(message) { editor.message = message }
+ShellRoot {
+    property bool openedOnce: false
+    Tuner.TunerWindow {
+        id: window
+        Component.onCompleted: openEditor()
     }
-    Tuner.Editor {
-        id: editor
-        anchors.fill: parent; busy: bridge.busy
-        onRequest: function(action, args) { bridge.request(action, args) }
+    Connections {
+        target: window
+        function onVisibleChanged() {
+            if (window.visible) openedOnce = true
+            else if (openedOnce) Qt.quit()
+        }
     }
-    Component.onCompleted: bridge.request("read", [])
 }

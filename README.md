@@ -1,8 +1,8 @@
 # WebcamTuner
 
-An Omarchy plugin for persistent webcam framing and appearance profiles. Local camera preview implementation for DIL-3027 (v0.3).
+An Omarchy plugin for persistent webcam framing and appearance profiles. Local camera preview implementation for DIL-3027 (v0.4).
 
-The current preview supports scroll/drag framing, named profiles, persistent crop/background settings, opt-in local camera preview with person segmentation and image replacement/blur, and optional remote discovery through the existing webcam_tool. It does not broadcast a virtual camera yet. The camera stays off until Preview camera is clicked.
+The current preview supports scroll/drag framing, named profiles, persistent crop/background settings, opt-in local camera preview with person segmentation and image replacement/blur, and optional remote discovery through the existing webcam_tool. It does not broadcast a virtual camera yet. The camera stays off until Preview camera is clicked. The bar icon opens a normal floating window; drag the WebcamTuner heading to move it and resize it with the window manager.
 
 ## Build and review
 
@@ -29,6 +29,24 @@ bin/webcamtuner remote --host framemoowork --json
 Remote inspection calls webcam_tool's public CLI and never starts capture. See DESIGN.md for ownership boundaries, source identity, the proposed processing service, and remaining work.
 
 For focused checks, set WEBCAMTUNER_TEST_ROOT to a disposable project-specific directory, run npm test, then python3 tests/ui_smoke.py. The UI smoke check runs offscreen, keeps the camera off, persists a crop through the controller, reloads it, and writes a design screenshot beneath that test directory.
+
+## Mirror and window controls
+
+Mirror is on by default, the opposite of the original unmirrored preview. Older profiles without a mirror field adopt the new default; an explicit saved choice is preserved. The checkbox saves its setting and verifies readback before changing the camera image. Mirror changes preserve other unsaved draft settings. Camera pixels and their matte are reflected together; an image background keeps its original orientation. Dragging the framed camera continues to follow the pointer in either mode.
+
+The plugin opens a native Quickshell floating window. Drag the WebcamTuner heading to move it, or use normal window-manager move/resize controls. Clicking elsewhere does not dismiss it. The native Close button and Escape hide the window and stop the current preview. The standalone Preview.qml uses the same window component.
+
+## Virtual-camera output route
+
+The current build is still a local preview. To publish it to webcam consumers, use Linux v4l2loopback plus one persistent user-session producer:
+
+1. Install v4l2loopback-dkms against matching kernel headers. On the current host, DKMS and running-kernel headers are present, but v4l2loopback is not installed.
+2. Create a loopback device labelled WebcamTuner with exclusive_caps=1 so Chromium/WebRTC sees capture-only capabilities after a producer attaches. This requires a one-time privileged module setup.
+3. Move capture and composition into one user service, which applies crop, mirror and backgrounds, then writes processed frames to that device (for example via FFmpeg's V4L2 output). The panel must preview that same producer rather than opening the physical camera twice.
+4. Keep the producer alive when the controls window closes; expose explicit output start/stop and readiness/error states. A missing effect must never quietly switch output to the unprocessed room.
+5. Select WebcamTuner once in each consumer, including Teams, Zoom or Meet. Validate Linux V4L2 capture and actual browser/app enumeration; sandbox permissions and supported formats remain part of compatibility testing.
+
+Driver reference: https://github.com/v4l2loopback/v4l2loopback . Kernel installation, persistent publishing, and meeting-app integration are not implemented by this UI update.
 
 ## Backgrounds
 

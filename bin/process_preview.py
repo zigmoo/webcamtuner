@@ -55,6 +55,8 @@ def load_background(value: str) -> np.ndarray:
 def validate_settings(settings: dict) -> dict:
     if not isinstance(settings, dict):
         raise ValueError("Invalid preview settings")
+    if not isinstance(settings.get("mirror", True), bool):
+        raise ValueError("Mirror must be on or off")
     camera = settings.get("camera", "")
     if not isinstance(camera, str) or not re.fullmatch(r"/dev/(?:video\d+|v4l/by-id/[^/]+)", camera):
         raise ValueError("Choose a local capture camera")
@@ -172,6 +174,12 @@ def composite(frame: np.ndarray, mask: np.ndarray, mode: str, background: np.nda
     return np.clip(frame.astype(np.float32) * mask + backdrop.astype(np.float32) * (1 - mask), 0, 255).astype(np.uint8)
 
 
+def orient_camera(frame: np.ndarray, mask: np.ndarray | None, mirror: bool):
+    if not mirror:
+        return frame, mask
+    return frame[:, ::-1].copy(), None if mask is None else mask[:, ::-1].copy()
+
+
 def emit(value: dict) -> None:
     with OUTPUT_LOCK:
         print(json.dumps(value, separators=(",", ":")), flush=True)
@@ -244,9 +252,11 @@ def run(initial: dict, frame_limit: int = 0) -> None:
                 alpha = segmenter.mask(frame)
                 alpha = crop_frame(alpha, current["crop"])[..., None]
                 frame = crop_frame(frame, current["crop"])
+                frame, alpha = orient_camera(frame, alpha, current.get("mirror", True))
                 frame = composite(frame, alpha, mode, background)
             else:
                 frame = crop_frame(frame, current["crop"])
+                frame, _ = orient_camera(frame, None, current.get("mirror", True))
             okay, encoded = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 82])
             if not okay:
                 raise RuntimeError("Could not encode the processed preview")

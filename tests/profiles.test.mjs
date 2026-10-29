@@ -29,6 +29,16 @@ test('an old panel cannot overwrite a newer profile', t => {
   assert.throws(() => saveStore(original, path), /another panel/)
   assert.equal(readFileSync(path, 'utf8'), before)
 })
+test('old profiles default to mirrored and an explicit unmirrored setting survives reload', t => {
+  const path = fixture(t), old = defaults()
+  delete old.profiles[0].mirror
+  writeFileSync(path, JSON.stringify(old))
+  const migrated = readStore(path)
+  assert.equal(migrated.profiles[0].mirror, true)
+  migrated.profiles[0].mirror = false
+  saveStore(migrated, path)
+  assert.equal(readStore(path).profiles[0].mirror, false)
+})
 test('invalid framing and duplicate IDs are rejected before writes', t => {
   const path = fixture(t), bad = defaults()
   bad.profiles[0].crop = { zoom: 2, centerX: 0, centerY: 0.5 }

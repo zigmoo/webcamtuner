@@ -17,6 +17,7 @@ export const profileSchema = z.object({
     .refine(c => c.centerX >= 0.5 / c.zoom && c.centerX <= 1 - 0.5 / c.zoom
       && c.centerY >= 0.5 / c.zoom && c.centerY <= 1 - 0.5 / c.zoom, 'Crop must stay inside the source frame'),
   background: z.object({ mode: z.enum(['none', 'blur', 'image']), imagePath: z.string().max(4096) }).strict(),
+  mirror: z.boolean().default(true),
   restoreOnStart: z.boolean(),
 }).strict()
 export const storeSchema = z.object({
@@ -34,7 +35,7 @@ export function defaults(): ProfileStore {
   return { schemaVersion: 1, revision: 0, activeProfile: 'desk', profiles: [{
     id: 'desk', name: 'Desk', source: { kind: 'local', host: '', camera: '' },
     crop: { zoom: 1, centerX: 0.5, centerY: 0.5 },
-    background: { mode: 'none', imagePath: '' }, restoreOnStart: true,
+    background: { mode: 'none', imagePath: '' }, mirror: true, restoreOnStart: true,
   }] }
 }
 export function readStore(path = storePath()): ProfileStore {

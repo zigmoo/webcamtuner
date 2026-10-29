@@ -1,4 +1,5 @@
 import QtQuick
+import Quickshell
 import Quickshell.Io
 import qs.Ui
 import qs.Commons as Commons
@@ -9,7 +10,7 @@ BarWidget {
     moduleName: "moo.webcamtuner"
     implicitWidth: button.implicitWidth
     implicitHeight: button.implicitHeight
-    readonly property bool opened: panel.open
+    readonly property bool opened: panel.visible
     property bool popoutSwitchClosing: false
     function open() {
         if (bar && typeof bar.moduleWidgets === "function") {
@@ -17,10 +18,9 @@ BarWidget {
             for (var i = 0; i < others.length; i++)
                 if (others[i] && others[i] !== root && typeof others[i].close === "function") others[i].close()
         }
-        panel.open = true
-        if (!editor.document) bridge.request("read", [])
+        panel.openEditor()
     }
-    function close() { editor.previewOn = false; panel.open = false }
+    function close() { panel.closeEditor() }
     function toggle() { opened ? close() : open() }
     function closeForPopoutSwitch() { close() }
     BarIconButton {
@@ -35,30 +35,13 @@ BarWidget {
         function close(): void { root.close() }
         function toggle(): void { root.toggle() }
         function status(): string {
-            return JSON.stringify({ opened: root.opened, busy: bridge.busy, message: editor.message,
-                revision: editor.document ? editor.document.revision : -1, broadcasting: false })
+            return JSON.stringify({ opened: root.opened, busy: panel.editor.busy, message: panel.editor.message,
+                mirror: panel.editor.mirror, revision: panel.editor.document ? panel.editor.document.revision : -1, broadcasting: false })
         }
     }
-    Tuner.Bridge {
-        id: bridge
-        pluginRoot: Qt.resolvedUrl(".").toString().replace(/^file:\/\//, "").replace(/\/$/, "")
-        onReceived: function(action, result) { editor.accept(action, result) }
-        onFailed: function(message) { editor.message = message }
-    }
-    KeyboardPanel {
+    Tuner.TunerWindow {
         id: panel
-        anchorItem: button; owner: root; bar: root.bar
-        contentWidth: fittedContentWidth(760)
-        contentHeight: fittedContentHeight(850, 900)
-        Tuner.Editor {
-            id: editor
-            anchors.fill: parent
-            panelOpen: panel.open
-            busy: bridge.busy
-            color: Commons.Color.background
-            accent: Commons.Color.accent
-            onRequest: function(action, args) { bridge.request(action, args) }
-            Keys.onEscapePressed: root.close()
-        }
+        color: Commons.Color.background
+        accent: Commons.Color.accent
     }
 }
