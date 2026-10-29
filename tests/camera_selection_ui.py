@@ -57,7 +57,7 @@ def exercise():
         assert editor.property('cameraPending') is True
         flush()
         assert editor.property('savedCamera') == A['id']
-        assert editor.property('previewOn') is False
+        assert editor.property('previewOn') is True
         evaluate('frame(2, 0.5, 0.5)')
         inventory([A, B], aliases)
         flush()
@@ -83,4 +83,4 @@ def exercise():
 QTimer.singleShot(100, exercise)
 app.exec()
 if failures: raise SystemExit('; '.join(failures))
-print('PASS: sole camera auto-selected; explicit choice saved immediately; stable identity restored after renumber; unplug fallback works; capture stays off')
+print('PASS: sole camera selected with autostart; choice saved immediately; stable identity restored after renumber; unplug fallback works')

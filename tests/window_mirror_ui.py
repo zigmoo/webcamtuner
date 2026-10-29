@@ -1,4 +1,4 @@
-"""Exercise mirror confirmation, unsaved crop preservation, and the title drag handle."""
+"""Exercise mirror confirmation and unsaved crop preservation."""
 import json
 import os
 from pathlib import Path
@@ -29,7 +29,6 @@ editor = view.rootObject()
 editor.setProperty("testing", True)
 pending, dragged, failures = [], [], []
 editor.request.connect(lambda action, args: pending.append((action, args.toVariant() if hasattr(args, "toVariant") else args)))
-editor.moveRequested.connect(lambda: dragged.append(True))
 
 def evaluate(expression):
     value = QQmlExpression(qmlContext(editor), editor, expression)
@@ -68,8 +67,6 @@ def exercise():
         pending.clear()
         evaluate("fail('Simulated save failure')")
         assert editor.property("mirror") is False and editor.property("mirrorPending") is False
-        click(editor.findChild(QObject, "windowDragHandle"))
-        assert dragged
         evaluate("save()")
         execute(*pending.pop(0))
         execute("read", [])
@@ -82,4 +79,4 @@ QTimer.singleShot(400, exercise)
 app.exec()
 if failures:
     raise SystemExit("; ".join(failures))
-print("PASS: mirror waits for verified save, retains draft crop, handles failed save; title emits native move request")
+print("PASS: mirror waits for verified save, retains draft crop, handles failed save")

@@ -28,6 +28,9 @@ Rectangle {
     property bool restoreOnStart: true
     property bool mirror: true
     property bool mirrorPending: false
+    property bool autostartCamera: true
+    property bool autostartPending: false
+    property bool autostartRequested: true
     property string profileName: "Desk"
     property string savedCamera: ""
     property string sourceHost: ""
@@ -50,12 +53,26 @@ Rectangle {
         return qsTr("Loading background image…")
     }
     signal request(string action, var args)
-    signal moveRequested()
     readonly property var cameras: CameraChoice.visibleInputs(testing && testCameraInputs !== null ? testCameraInputs : devices.videoInputs, cameraAliases)
     readonly property real cropFraction: 1 / zoom
     readonly property var captureFormat: processor.item ? processor.item.format : ({})
     readonly property int cropWidth: captureFormat.captureWidth ? Math.floor(captureFormat.captureWidth / zoom / 2) * 2 : 0
     readonly property int cropHeight: captureFormat.captureHeight ? Math.floor(captureFormat.captureHeight / zoom / 2) * 2 : 0
+
+    onPanelOpenChanged: {
+        autostartRequested = panelOpen
+        if (!panelOpen) previewOn = false
+        else maybeAutostart()
+    }
+    onBusyChanged: maybeAutostart()
+    onImageReadyChanged: maybeAutostart()
+    function maybeAutostart() {
+        if (!autostartRequested || !autostartCamera || !panelOpen || !document || !cameraChoiceReady
+            || busy || cameraPending || mirrorPending || autostartPending || sourceKind !== "local"
+            || savedCamera === "" || cameraIndex() < 0 || (backgroundMode === "image" && !imageReady)) return
+        autostartRequested = false
+        previewOn = true
+    }
 
     component LabelText: Text {
         color: "#e9ecef"; font.pixelSize: 14; textFormat: Text.PlainText
@@ -99,6 +116,7 @@ Rectangle {
         savedCamera = p.source.camera; sourceHost = p.source.host; sourceKind = p.source.kind
         restoreOnStart = p.restoreOnStart
         mirror = p.mirror === undefined ? true : p.mirror
+        autostartCamera = p.autostartCamera === undefined ? true : p.autostartCamera
         dirty = false
         if (cameraChoiceReady) chooseCamera()
     }
@@ -112,6 +130,15 @@ Rectangle {
                 savedCamera = pendingCamera
                 sourceKind = "local"; sourceHost = ""
                 message = qsTr("Camera ready")
+                maybeAutostart()
+                return
+            }
+            if (autostartPending && action === "save") {
+                autostartPending = false
+                autostartCamera = result.profiles[profileIndex].autostartCamera
+                autostartRequested = autostartCamera
+                message = qsTr("Autostart camera setting saved")
+                maybeAutostart()
                 return
             }
             if (mirrorPending && action === "save") {
@@ -144,26 +171,36 @@ Rectangle {
         p.source = { kind: sourceKind, host: sourceHost, camera: savedCamera }
         p.restoreOnStart = restoreOnStart
         p.mirror = mirror
+        p.autostartCamera = autostartCamera
         next.activeProfile = p.id
         message = qsTr("Saving and verifying…")
         request("save", ["--document", JSON.stringify(next)])
     }
     function toggleMirror() {
-        if (!document || busy || mirrorPending || cameraPending) return
+        if (!document || busy || mirrorPending || cameraPending || autostartPending) return
         var next = JSON.parse(JSON.stringify(document))
         next.profiles[profileIndex].mirror = !mirror
         mirrorPending = true
         message = qsTr("Saving mirror setting…")
         request("save", ["--document", JSON.stringify(next)])
     }
+    function toggleAutostart() {
+        if (!document || busy || mirrorPending || cameraPending || autostartPending) return
+        var next = JSON.parse(JSON.stringify(document))
+        next.profiles[profileIndex].autostartCamera = !autostartCamera
+        autostartPending = true
+        message = qsTr("Saving autostart camera setting…")
+        request("save", ["--document", JSON.stringify(next)])
+    }
     function fail(message) {
         mirrorPending = false
         cameraPending = false
+        autostartPending = false
         root.message = message
     }
     function refreshCameraInventory() {
         if (!document || testing) return
-        if (busy || mirrorPending || cameraPending) { cameraRefresh.restart(); return }
+        if (busy || mirrorPending || cameraPending || autostartPending) { cameraRefresh.restart(); return }
         request("devices", [])
     }
     function cameraIndex() {
@@ -172,7 +209,7 @@ Rectangle {
         return -1
     }
     function chooseCamera() {
-        if (!document || !cameraChoiceReady || mirrorPending || cameraPending) return
+        if (!document || !cameraChoiceReady || mirrorPending || cameraPending || autostartPending) return
         var id = CameraChoice.pick(cameras, cameraAliases, document.lastCamera || "", cameraStartup ? "" : savedCamera,
             document.profiles[profileIndex].source.camera, String(devices.defaultVideoInput.id))
         cameraStartup = false
@@ -182,12 +219,13 @@ Rectangle {
             if (savedCamera !== id) previewOn = false
             savedCamera = id
             sourceKind = "local"; sourceHost = ""
+            maybeAutostart()
             return
         }
         selectCamera(id)
     }
     function selectCamera(id) {
-        if (!document || busy || mirrorPending || cameraPending) return
+        if (!document || busy || mirrorPending || cameraPending || autostartPending) return
         var next = JSON.parse(JSON.stringify(document))
         next.lastCamera = CameraChoice.keyFor(id, cameraAliases)
         next.profiles[profileIndex].source = { kind: "local", host: "", camera: id }
@@ -228,14 +266,6 @@ Rectangle {
         ColumnLayout {
             width: parent.width
             spacing: 14
-            RowLayout {
-                Layout.fillWidth: true
-                LabelText {
-                    text: "WebcamTuner"; font.pixelSize: 26; font.bold: true; Layout.fillWidth: true
-                    MouseArea { objectName: "windowDragHandle"; anchors.fill: parent; cursorShape: Qt.SizeAllCursor; onPressed: root.moveRequested() }
-                }
-                LabelText { text: qsTr("DESIGN PREVIEW"); color: root.accent; font.pixelSize: 11; font.letterSpacing: 1.5 }
-            }
             LabelText { text: qsTr("Frame your camera. Choose a background. Save your look."); color: "#a9b4c1"; Layout.fillWidth: true }
             RowLayout {
                 Layout.fillWidth: true
@@ -259,7 +289,7 @@ Rectangle {
                 objectName: "cameraChoice"; Layout.fillWidth: true
                 model: root.cameras; textRole: "description"
                 currentIndex: root.cameraIndex()
-                enabled: root.cameraChoiceReady && !root.busy && !root.cameraPending && !root.mirrorPending
+                enabled: root.cameraChoiceReady && !root.busy && !root.cameraPending && !root.mirrorPending && !root.autostartPending
                 displayText: root.cameraPending ? qsTr("Selecting camera…") : root.cameraChoiceReady && root.cameras.length === 0 ? qsTr("No webcam connected") : currentIndex < 0 ? qsTr("Detecting connected webcams…") : currentText
                 onActivated: function(index) {
                     var id = String(root.cameras[index].id)
@@ -337,7 +367,7 @@ Rectangle {
                     objectName: "mirrorToggle"
                     text: root.mirrorPending ? qsTr("Mirror (saving…)") : qsTr("Mirror")
                     checked: root.mirror
-                    enabled: root.document !== null && !root.busy && !root.mirrorPending && !root.cameraPending
+                    enabled: root.document !== null && !root.busy && !root.mirrorPending && !root.cameraPending && !root.autostartPending
                     nextCheckState: function() { return checkState }
                     onClicked: root.toggleMirror()
                 }
@@ -346,7 +376,7 @@ Rectangle {
                 Button {
                     text: root.previewOn ? qsTr("Camera off") : qsTr("Preview camera")
                     enabled: root.cameraChoiceReady && !root.cameraPending && root.savedCamera !== "" && root.sourceKind === "local" && !root.testing && (root.previewOn || root.backgroundMode !== "image" || root.imageReady)
-                    onClicked: root.previewOn = !root.previewOn
+                    onClicked: { root.autostartRequested = false; root.previewOn = !root.previewOn }
                 }
             }
             LabelText {
@@ -386,6 +416,14 @@ Rectangle {
                 text: qsTr("Restore this profile when WebcamTuner starts")
                 checked: root.restoreOnStart
                 onClicked: { root.restoreOnStart = checked; root.mark() }
+            }
+            CheckBox {
+                objectName: "autostartToggle"
+                text: root.autostartPending ? qsTr("Autostart camera (saving…)") : qsTr("Autostart camera")
+                checked: root.autostartCamera
+                enabled: root.document !== null && !root.busy && !root.mirrorPending && !root.cameraPending && !root.autostartPending
+                nextCheckState: function() { return checkState }
+                onClicked: root.toggleAutostart()
             }
             LabelText { text: qsTr("Output: not broadcasting. Virtual-camera processing is the next implementation stage."); color: root.accent; Layout.fillWidth: true }
             RowLayout {

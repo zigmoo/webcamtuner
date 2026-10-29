@@ -36,7 +36,8 @@ BarWidget {
         function toggle(): void { root.toggle() }
         function status(): string {
             return JSON.stringify({ opened: root.opened, busy: panel.editor.busy, message: panel.editor.message,
-                mirror: panel.editor.mirror, revision: panel.editor.document ? panel.editor.document.revision : -1, broadcasting: false })
+                mirror: panel.editor.mirror, autostartCamera: panel.editor.autostartCamera, previewOn: panel.editor.previewOn,
+                revision: panel.editor.document ? panel.editor.document.revision : -1, broadcasting: false })
         }
     }
     Tuner.TunerWindow {

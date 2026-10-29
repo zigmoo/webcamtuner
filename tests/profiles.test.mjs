@@ -29,17 +29,21 @@ test('an old panel cannot overwrite a newer profile', t => {
   assert.throws(() => saveStore(original, path), /another panel/)
   assert.equal(readFileSync(path, 'utf8'), before)
 })
-test('old profiles default to mirrored and an explicit unmirrored setting survives reload', t => {
+test('old profiles adopt mirror and autostart defaults; explicit disabled settings survive reload', t => {
   const path = fixture(t), old = defaults()
   delete old.profiles[0].mirror
+  delete old.profiles[0].autostartCamera
   delete old.lastCamera
   writeFileSync(path, JSON.stringify(old))
   const migrated = readStore(path)
   assert.equal(migrated.profiles[0].mirror, true)
+  assert.equal(migrated.profiles[0].autostartCamera, true)
   assert.equal(migrated.lastCamera, '')
   migrated.profiles[0].mirror = false
+  migrated.profiles[0].autostartCamera = false
   saveStore(migrated, path)
   assert.equal(readStore(path).profiles[0].mirror, false)
+  assert.equal(readStore(path).profiles[0].autostartCamera, false)
 })
 test('invalid framing and duplicate IDs are rejected before writes', t => {
   const path = fixture(t), bad = defaults()
