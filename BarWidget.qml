@@ -34,8 +34,10 @@ BarWidget {
         function open(): void { root.open() }
         function close(): void { root.close() }
         function toggle(): void { root.toggle() }
+        function minimize(): void { if (root.opened && !panel.collapsed) panel.toggleCollapse() }
         function status(): string {
-            return JSON.stringify({ opened: root.opened, busy: panel.editor.busy, message: panel.editor.message,
+            return JSON.stringify({ opened: root.opened, collapsed: panel.collapsed, width: panel.width, height: panel.height,
+                busy: panel.editor.busy, message: panel.editor.message,
                 mirror: panel.editor.mirror, autostartCamera: panel.editor.autostartCamera, previewOn: panel.editor.previewOn,
                 revision: panel.editor.document ? panel.editor.document.revision : -1, broadcasting: false })
         }

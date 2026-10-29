@@ -19,17 +19,29 @@ Rectangle {
         Item {
             Layout.fillWidth: true
             Layout.fillHeight: true
-            RowLayout {
-                anchors.fill: parent
-                spacing: 10
-                Text {
-                    text: "⠿"; color: "#d9e2ed"; font.pixelSize: 22
-                    textFormat: Text.PlainText
+            Item {
+                objectName: "toolbarGrip"
+                width: 10; height: 16
+                anchors.verticalCenter: parent.verticalCenter
+                Repeater {
+                    model: 6
+                    Rectangle {
+                        required property int index
+                        x: (index % 2) * 6; y: Math.floor(index / 2) * 6
+                        width: 4; height: 4; radius: 2; color: "#d9e2ed"
+                    }
                 }
-                Text {
-                    text: "WebcamTuner"; color: "#f5f7fa"; font.pixelSize: 14; font.bold: true
-                    textFormat: Text.PlainText; elide: Text.ElideRight; Layout.fillWidth: true
-                }
+            }
+            FontMetrics { id: titleMetrics; font: title.font }
+            Text {
+                id: title
+                objectName: "toolbarTitle"
+                x: 22; width: parent.width - 22
+                // Center the visible lettering rather than the font's line box.
+                y: (parent.height - titleMetrics.tightBoundingRect(text).height) / 2
+                    - baselineOffset - titleMetrics.tightBoundingRect(text).y
+                text: "WebcamTuner"; color: "#f5f7fa"; font.pixelSize: 14; font.bold: true
+                textFormat: Text.PlainText; elide: Text.ElideRight
             }
             MouseArea {
                 objectName: "windowDragHandle"
@@ -43,14 +55,19 @@ Rectangle {
             id: minimizeButton
             objectName: "windowMinimizeButton"
             Layout.preferredWidth: 32; Layout.preferredHeight: 32
+            Layout.alignment: Qt.AlignVCenter
+            padding: 0; topInset: 0; bottomInset: 0; leftInset: 0; rightInset: 0
             text: root.collapsed ? "⌄" : "−"
             Accessible.name: root.collapsed ? qsTr("Expand palette") : qsTr("Minimize window")
             ToolTip.visible: hovered
             ToolTip.text: Accessible.name
-            contentItem: Text {
-                text: minimizeButton.text; textFormat: Text.PlainText
-                color: "#f5f7fa"; font.pixelSize: 21
-                horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
+            contentItem: Item {
+                Rectangle { visible: !root.collapsed; anchors.centerIn: parent; width: 12; height: 2; color: "#f5f7fa" }
+                Item {
+                    visible: root.collapsed; anchors.centerIn: parent; width: 14; height: 14
+                    Rectangle { anchors.centerIn: parent; anchors.horizontalCenterOffset: -2.5; width: 8; height: 2; rotation: 45; color: "#f5f7fa" }
+                    Rectangle { anchors.centerIn: parent; anchors.horizontalCenterOffset: 2.5; width: 8; height: 2; rotation: -45; color: "#f5f7fa" }
+                }
             }
             background: Rectangle { radius: 4; color: minimizeButton.hovered ? "#506075" : "transparent" }
             onClicked: root.minimizeRequested()
@@ -59,14 +76,15 @@ Rectangle {
             id: closeButton
             objectName: "windowCloseButton"
             Layout.preferredWidth: 32; Layout.preferredHeight: 32
+            Layout.alignment: Qt.AlignVCenter
+            padding: 0; topInset: 0; bottomInset: 0; leftInset: 0; rightInset: 0
             text: "×"
             Accessible.name: qsTr("Close window")
             ToolTip.visible: hovered
             ToolTip.text: Accessible.name
-            contentItem: Text {
-                text: closeButton.text; textFormat: Text.PlainText
-                color: "#f5f7fa"; font.pixelSize: 23
-                horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
+            contentItem: Item {
+                Rectangle { anchors.centerIn: parent; width: 14; height: 2; rotation: 45; color: "#f5f7fa" }
+                Rectangle { anchors.centerIn: parent; width: 14; height: 2; rotation: -45; color: "#f5f7fa" }
             }
             background: Rectangle { radius: 4; color: closeButton.hovered ? "#a83e48" : "transparent" }
             onClicked: root.closeRequested()

@@ -83,3 +83,15 @@ A fixed 42-pixel title bar keeps the grip, WebcamTuner title, minimize/expand co
 ## Use in other apps guidance (v0.6.1)
 
 The editor includes a Use in other apps section below its profile controls. It identifies the current output as preview only and explains that no processed virtual webcam is published by this build. The guide describes selecting WebcamTuner in camera settings after virtual output is implemented and started, granting browser camera permission, disabling duplicate app background effects, and refreshing camera discovery. Choosing a physical BRIO or laptop camera bypasses WebcamTuner processing. These are instructions for the planned output flow, not a claim that the current preview is available to meeting apps.
+
+## Toolbar and guide refinements (v0.6.2)
+
+The fixed title bar optically centers the title lettering and uses geometric grip, minimize and close icons so font baselines cannot shift their visible centers. On Omarchy, collapse/expand applies an explicit, guarded Hyprland resize to this window after its size hints settle; preferred FloatingWindow dimensions alone do not resize a visible native window. The minimize regression clicks the real toolbar button, holds the title-strip state for nearly two seconds without a hide/remap, expands, and closes. Native Wayland verifies the restored height.
+
+Use in other apps is now a disclosure section, folded by default. Its heading and current preview-only output status remain visible; click the heading to reveal or hide the setup guide. This display preference does not alter the saved camera profile.
+
+## Concurrent camera use acceptance requirement
+
+Jason confirmed that the same physical camera has worked in Teams and Zoom simultaneously. WebcamTuner must support both apps consuming its processed output concurrently. The existing worker explicitly captures through OpenCV CAP_V4L2 and sends processed preview JPEGs only to the editor; it does not yet publish a camera device or shared output node. Local PipeWire inventory contains video-source nodes for the BRIO and Framework webcam, but that inventory does not establish which capture/sharing path the earlier Teams/Zoom session used. No camera-protocol violation has been demonstrated.
+
+Evaluate shared PipeWire/portal camera capture while implementing the persistent producer, and publish a processed camera through the appropriate app-compatible interface. One producer must own effects and serve the editor and all consumers, rather than opening a fresh physical capture for each client. Acceptance must verify Teams and Zoom receiving the processed camera simultaneously; framing/background changes appearing in both; either app opening or closing without interrupting the other; and editor minimize/close leaving an explicitly running output alive. Also test browser permissions and capture format negotiation. The current preview-only build does not meet this output requirement.

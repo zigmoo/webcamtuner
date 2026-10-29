@@ -31,6 +31,7 @@ Rectangle {
     property bool autostartCamera: true
     property bool autostartPending: false
     property bool autostartRequested: true
+    property bool outputHelpExpanded: false
     property string profileName: "Desk"
     property string savedCamera: ""
     property string sourceHost: ""
@@ -434,23 +435,37 @@ Rectangle {
             LabelText { objectName: "saveStatus"; text: root.message; color: root.accent; Layout.fillWidth: true }
             LabelText { visible: root.remoteSummary !== ""; text: root.remoteSummary; Layout.fillWidth: true; font.pixelSize: 12 }
             Rectangle { Layout.fillWidth: true; height: 1; color: "#39414b" }
-            LabelText { text: qsTr("Use in other apps"); font.bold: true }
+            Button {
+                objectName: "outputHelpToggle"
+                text: (root.outputHelpExpanded ? "▾  " : "▸  ") + qsTr("Use in other apps")
+                Accessible.name: qsTr("Use in other apps")
+                Layout.fillWidth: true
+                flat: true
+                contentItem: LabelText { text: parent.text; font.bold: true; verticalAlignment: Text.AlignVCenter }
+                onClicked: root.outputHelpExpanded = !root.outputHelpExpanded
+            }
             LabelText { text: qsTr("Output: preview only"); color: root.accent; Layout.fillWidth: true }
-            LabelText {
-                text: qsTr("This version shows your processed camera here, but does not publish a WebcamTuner camera yet. Teams, Zoom, Meet and other webcam apps cannot receive these effects until virtual-camera output is added.")
+            ColumnLayout {
+                objectName: "outputHelpBody"
                 Layout.fillWidth: true
-            }
-            LabelText {
-                text: qsTr("Once virtual-camera output is available:\n1. Start output in WebcamTuner.\n2. Open the other app’s video or camera settings and select WebcamTuner.\n3. Turn off that app’s background replacement and blur to use the look you set here.")
-                Layout.fillWidth: true
-            }
-            LabelText {
-                text: qsTr("For browser calls, allow the site to use your camera and select WebcamTuner. If the camera is missing, start output first, then reopen camera settings or restart the app.")
-                color: "#a9b4c1"; Layout.fillWidth: true
-            }
-            LabelText {
-                text: qsTr("Selecting Logitech BRIO or the laptop camera directly uses the original camera feed, bypassing WebcamTuner’s framing and backgrounds.")
-                color: "#a9b4c1"; Layout.fillWidth: true
+                visible: root.outputHelpExpanded
+                spacing: 10
+                LabelText {
+                    text: qsTr("This version shows your processed camera here, but does not publish a WebcamTuner camera yet. Teams, Zoom, Meet and other webcam apps cannot receive these effects until virtual-camera output is added.")
+                    Layout.fillWidth: true
+                }
+                LabelText {
+                    text: qsTr("Once virtual-camera output is available:\n1. Start output in WebcamTuner.\n2. Open the other app’s video or camera settings and select WebcamTuner.\n3. Turn off that app’s background replacement and blur to use the look you set here.")
+                    Layout.fillWidth: true
+                }
+                LabelText {
+                    text: qsTr("For browser calls, allow the site to use your camera and select WebcamTuner. If the camera is missing, start output first, then reopen camera settings or restart the app.")
+                    color: "#a9b4c1"; Layout.fillWidth: true
+                }
+                LabelText {
+                    text: qsTr("Selecting Logitech BRIO or the laptop camera directly uses the original camera feed, bypassing WebcamTuner’s framing and backgrounds.")
+                    color: "#a9b4c1"; Layout.fillWidth: true
+                }
             }
             Rectangle { Layout.fillWidth: true; height: 1; color: "#39414b" }
         }

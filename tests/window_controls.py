@@ -10,30 +10,41 @@ scratch.mkdir(parents=True)
 harness = scratch / 'shell.qml'
 harness.write_text('''import QtQuick
 import Quickshell
+import QtTest
 import "''' + (root / 'ui').as_uri() + '''" as Tuner
 ShellRoot {
+ TestCase { id: pointer; when: false }
  property int phase: 0
+ property int readyTicks: 0
+ property int holdTicks: 0
+ property int visibilityChanges: 0
+ property int beforeCollapse: 0
  property int fullHeight: 0
  function expect(value, message) { if (!value) { console.log("FAIL: " + message); Qt.exit(1) } }
  Tuner.TunerWindow {
   id:w
   Component.onCompleted: { editor.testing=true; openEditor() }
  }
+ Connections { target:w; function onVisibleChanged() { visibilityChanges++ } }
  Timer {
   interval:150; running:true; repeat:true
   onTriggered: {
    if (!w.editor.document || w.editor.busy) return
    if (phase === 0) {
+    if (++readyTicks < 5) return
     fullHeight=w.height
     w.editor.previewOn=true; w.editor.dirty=true
-    w.titleBar.minimizeRequested()
+    beforeCollapse=visibilityChanges
+    pointer.mouseClick(pointer.findChild(w.titleBar, "windowMinimizeButton"),16,16)
    } else if (phase === 1) {
     expect(w.collapsed && w.height === 42, "collapse to titlebar")
     expect(w.editor.previewOn && w.editor.dirty, "minimize retains preview and draft")
-    w.titleBar.minimizeRequested()
+    expect(w.visible && visibilityChanges === beforeCollapse, "collapse must not hide/remap the window")
+    if (++holdTicks < 12) return
+    pointer.mouseClick(pointer.findChild(w.titleBar, "windowMinimizeButton"),16,16)
    } else if (phase === 2) {
-    expect(!w.collapsed && w.height === fullHeight, "restore previous height: got " + w.height + " expected " + fullHeight + " saved " + w.expandedHeight + " implicit " + w.implicitHeight + " max " + w.maximumSize.height)
-    w.titleBar.closeRequested()
+    expect(!w.collapsed && (Quickshell.env("QT_QPA_PLATFORM") === "offscreen" ? w.height >= 460 : w.height === fullHeight), "restore height: got " + w.height + " expected " + fullHeight)
+    pointer.mouseClick(pointer.findChild(w.titleBar, "windowCloseButton"),16,16)
    } else if (phase === 3) {
     expect(!w.visible && !w.editor.previewOn && w.editor.dirty, "close hides, stops camera, keeps draft")
     w.openEditor()

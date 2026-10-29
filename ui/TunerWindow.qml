@@ -8,29 +8,27 @@ FloatingWindow {
     property alias titleBar: titlebar
     property color accent: "#93c5aa"
     property bool collapsed: false
-    property bool restoringSize: false
     property int expandedWidth: Math.min(780, screen ? screen.width - 80 : 780)
     property int expandedHeight: Math.min(900, screen ? screen.height - 80 : 900)
     title: "WebcamTuner"
     visible: false
     implicitWidth: expandedWidth
     implicitHeight: expandedHeight
-    minimumSize: Qt.size(540, collapsed ? 42 : restoringSize ? expandedHeight : 460)
+    minimumSize: Qt.size(540, collapsed ? 42 : 460)
     maximumSize: Qt.size(16777215, collapsed ? 42 : 16777215)
     color: "#171c24"
-    onCollapsedChanged: {
-        restoringSize = !collapsed
-        resizePalette.restart()
-        releaseSize.restart()
-    }
-    Timer { id: releaseSize; interval: 75; onTriggered: window.restoringSize = false }
+    onCollapsedChanged: resizePalette.restart()
     Timer {
         id: resizePalette
-        interval: 0
+        interval: 50
         onTriggered: {
-            // Apply geometry after the collapsed/expanded size limits settle.
+            // FloatingWindow preferences do not resize an already visible native window.
             window.implicitWidth = window.expandedWidth
             window.implicitHeight = window.collapsed ? 42 : window.expandedHeight
+            if (!window.visible || Quickshell.env("QT_QPA_PLATFORM").indexOf("offscreen") !== -1) return
+            Hyprland.dispatch('(function() local w=hl.get_window("title:^WebcamTuner$"); if w then return hl.dsp.window.resize({x='
+                + window.expandedWidth + ', y=' + (window.collapsed ? 42 : window.expandedHeight)
+                + ', relative=false, window=w}) end; return hl.dsp.no_op() end)()')
         }
     }
 
@@ -42,8 +40,8 @@ FloatingWindow {
     function closeEditor() { editor.previewOn = false; visible = false }
     function toggleCollapse() {
         if (!collapsed) {
-            expandedWidth = width
-            expandedHeight = height
+            expandedWidth = Math.max(540, width)
+            expandedHeight = Math.max(460, height)
         }
         collapsed = !collapsed
     }

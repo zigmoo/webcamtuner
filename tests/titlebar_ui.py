@@ -1,23 +1,18 @@
-"""Exercise mirror confirmation, unsaved crop preservation, and the title drag handle."""
-import json
+"""Exercise titlebar pointer actions and the vertical alignment of visible controls."""
 import os
 from pathlib import Path
-import subprocess
 import sys
-import uuid
 
 os.environ["QT_QPA_PLATFORM"] = "offscreen"
 os.environ["QT_QUICK_BACKEND"] = "software"
 os.environ["QT_SCALE_FACTOR"] = "1"
 from PySide6.QtCore import QObject, QPoint, Qt, QTimer, QUrl
-from PySide6.QtGui import QGuiApplication
-from PySide6.QtQml import QQmlExpression, qmlContext
+from PySide6.QtGui import QGuiApplication, QFontMetricsF
 from PySide6.QtQuick import QQuickView
 from PySide6.QtTest import QTest
 
 root = Path(__file__).resolve().parent.parent
 scratch = Path(os.environ["WEBCAMTUNER_TEST_ROOT"])
-os.environ["WEBCAMTUNER_CONFIG_ROOT"] = str(scratch / ("mirror-ui-" + uuid.uuid4().hex))
 app = QGuiApplication(sys.argv)
 view = QQuickView()
 view.setResizeMode(QQuickView.SizeRootObjectToView)
@@ -27,21 +22,10 @@ if view.status() == QQuickView.Error:
 view.resize(760, 42)
 editor = view.rootObject()
 
-pending, dragged, failures = [], [], []
+dragged, failures = [], []
 editor.moveRequested.connect(lambda: dragged.append("move"))
 editor.minimizeRequested.connect(lambda: dragged.append("minimize"))
 editor.closeRequested.connect(lambda: dragged.append("close"))
-
-def evaluate(expression):
-    value = QQmlExpression(qmlContext(editor), editor, expression)
-    result = value.evaluate()
-    if value.hasError():
-        raise RuntimeError(value.error().toString())
-    return result
-
-def execute(action, args):
-    result = json.loads(subprocess.check_output([str(root / "bin" / "webcamtuner"), action, *args, "--json"], text=True))
-    evaluate("accept(" + json.dumps(action) + ", " + json.dumps(result) + ")")
 
 def click(item):
     point = item.mapToScene(item.boundingRect().center())
@@ -50,6 +34,14 @@ def click(item):
 view.show()
 def exercise():
     try:
+        for name in ("toolbarGrip", "windowMinimizeButton", "windowCloseButton"):
+            item = editor.findChild(QObject, name)
+            assert abs(item.mapToScene(item.boundingRect().center()).y() - 21) < 0.5, name
+        title = editor.findChild(QObject, "toolbarTitle")
+        ink = QFontMetricsF(title.property("font")).tightBoundingRect("WebcamTuner")
+        ink_center = title.y() + title.property("baselineOffset") + ink.center().y()
+        assert abs(ink_center - 21) < 0.5, ink_center
+        assert view.grabWindow().save(str(scratch / "centered-titlebar.png"))
         click(editor.findChild(QObject, "windowDragHandle"))
         click(editor.findChild(QObject, "windowMinimizeButton"))
         editor.setProperty("collapsed", True)
@@ -64,4 +56,4 @@ def exercise():
 QTimer.singleShot(150, exercise)
 app.exec()
 if failures: raise SystemExit("; ".join(failures))
-print("PASS: titlebar pointer actions emit drag, minimize, close; collapsed control offers expand")
+print("PASS: titlebar grip, title ink and buttons are vertically centered; drag/minimize/close pointer actions work")
