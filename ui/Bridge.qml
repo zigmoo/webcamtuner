@@ -21,13 +21,21 @@ Item {
         stdout: StdioCollector { id: output; waitForEnd: true }
         stderr: StdioCollector { id: errors; waitForEnd: true }
         onExited: function(code) {
+            var operation = root.action
             if (code !== 0) {
                 root.failure = String(errors.text || output.text || "Command failed").slice(0, 500)
-                root.failed(root.failure)
+                var failure = root.failure
+                Qt.callLater(function() { root.failed(failure) })
                 return
             }
-            try { root.received(root.action, JSON.parse(output.text)) }
-            catch (e) { root.failed("Could not read the controller response: " + e.message) }
+            // Settle Process.running before a response handler starts the next command.
+            try {
+                var result = JSON.parse(output.text)
+                Qt.callLater(function() { root.received(operation, result) })
+            } catch (e) {
+                var message = "Could not read the controller response: " + e.message
+                Qt.callLater(function() { root.failed(message) })
+            }
         }
     }
 }

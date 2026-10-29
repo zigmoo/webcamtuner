@@ -1,9 +1,11 @@
 import { Cli, z } from 'incur'
 import { execFileSync } from 'node:child_process'
 import { readStore, saveStore, storePath, cropPixels } from './profiles.js'
+import { cameraAliases } from './cameras.js'
 
-const cli = Cli.create('webcamtuner', { version: '0.4.0', description: 'WebcamTuner preview: persist camera framing and background profiles. No capture starts automatically.' })
+const cli = Cli.create('webcamtuner', { version: '0.5.0', description: 'WebcamTuner preview: persist camera framing and background profiles. No capture starts automatically.' })
 cli.command('read', { description: 'Read profiles and their revision without starting capture', run: () => readStore() })
+cli.command('devices', { description: 'Read stable local webcam identifiers without opening a camera', run: () => ({ aliases: cameraAliases() }) })
 cli.command('save', {
   description: 'Validate, atomically save, and read back profiles; rejects concurrent edits',
   options: z.object({ document: z.string().max(131072).describe('Complete profile store JSON with expected revision') }),

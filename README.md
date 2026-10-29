@@ -1,6 +1,6 @@
 # WebcamTuner
 
-An Omarchy plugin for persistent webcam framing and appearance profiles. Local camera preview implementation for DIL-3027 (v0.4).
+An Omarchy plugin for persistent webcam framing and appearance profiles. Local camera preview implementation for DIL-3027 (v0.5).
 
 The current preview supports scroll/drag framing, named profiles, persistent crop/background settings, opt-in local camera preview with person segmentation and image replacement/blur, and optional remote discovery through the existing webcam_tool. It does not broadcast a virtual camera yet. The camera stays off until Preview camera is clicked. The bar icon opens a normal floating window; drag the WebcamTuner heading to move it and resize it with the window manager.
 
@@ -63,3 +63,9 @@ The background checks are `bin/preview-python tests/backgrounds_test.py` and `py
 - Escape closes the Omarchy panel when focus is in its editor.
 
 Copyright 2026 Jason Benjamin Ziegler Sr. Application source: Apache-2.0; bundled RVM model: GPL-3.0 (models/rvm/LICENSE). BrioTune by Shawn Yeager was a design reference; no upstream source was copied.
+
+## Automatic webcam selection (v0.5)
+
+WebcamTuner remembers camera selections immediately, independently of the profile Save button. On startup it restores the most recently selected webcam using its stable USB by-id identifier, resolving the current video node. If only one ordinary webcam is connected, it selects that camera automatically. With several cameras and no usable history, it uses the saved profile camera, then the OS default, then an available camera. Hotplug keeps a still-available current camera; unplugging it selects an available replacement. No-camera state gives a connection message. Secondary infrared/metadata UVC endpoints are excluded from the normal webcam list, so a BRIO's extra endpoint does not create an unnecessary choice.
+
+Selection changes are saved and read back before the selected state is finalized. They preserve unrelated unsaved framing adjustments. Camera selection does not start capture; Preview remains explicit. Tests cover the sole-camera default, immediate persistence, restoration after device renumbering, unplug fallback, IR filtering, and confirmed state without starting capture.

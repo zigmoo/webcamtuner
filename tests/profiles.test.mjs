@@ -32,9 +32,11 @@ test('an old panel cannot overwrite a newer profile', t => {
 test('old profiles default to mirrored and an explicit unmirrored setting survives reload', t => {
   const path = fixture(t), old = defaults()
   delete old.profiles[0].mirror
+  delete old.lastCamera
   writeFileSync(path, JSON.stringify(old))
   const migrated = readStore(path)
   assert.equal(migrated.profiles[0].mirror, true)
+  assert.equal(migrated.lastCamera, '')
   migrated.profiles[0].mirror = false
   saveStore(migrated, path)
   assert.equal(readStore(path).profiles[0].mirror, false)

@@ -24,6 +24,7 @@ export const storeSchema = z.object({
   schemaVersion: z.literal(1),
   revision: z.number().int().nonnegative(),
   activeProfile: z.string(),
+  lastCamera: z.string().max(512).default(''),
   profiles: z.array(profileSchema).min(1).max(30),
 }).strict().refine(s => new Set(s.profiles.map(p => p.id)).size === s.profiles.length, 'Profile IDs must be unique')
   .refine(s => s.profiles.some(p => p.id === s.activeProfile), 'Active profile must exist')
@@ -32,7 +33,7 @@ export function storePath(): string {
   return join(process.env.WEBCAMTUNER_CONFIG_ROOT || join(process.env.XDG_CONFIG_HOME || join(homedir(), '.config'), 'webcamtuner'), 'profiles.json')
 }
 export function defaults(): ProfileStore {
-  return { schemaVersion: 1, revision: 0, activeProfile: 'desk', profiles: [{
+  return { schemaVersion: 1, revision: 0, activeProfile: 'desk', lastCamera: '', profiles: [{
     id: 'desk', name: 'Desk', source: { kind: 'local', host: '', camera: '' },
     crop: { zoom: 1, centerX: 0.5, centerY: 0.5 },
     background: { mode: 'none', imagePath: '' }, mirror: true, restoreOnStart: true,

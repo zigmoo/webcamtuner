@@ -3,6 +3,7 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import QtQuick.Dialogs
 import QtMultimedia
+import "CameraChoice.js" as CameraChoice
 
 Rectangle {
     id: root
@@ -31,6 +32,12 @@ Rectangle {
     property string savedCamera: ""
     property string sourceHost: ""
     property string sourceKind: "local"
+    property var cameraAliases: []
+    property bool cameraChoiceReady: false
+    property bool cameraPending: false
+    property string pendingCamera: ""
+    property bool cameraStartup: true
+    property var testCameraInputs: null
     readonly property bool imageReady: backgroundImage.status === Image.Ready
     readonly property string backgroundFeedback: {
         if (backgroundMode === "blur") return previewOn ? qsTr("Blur is applied to the camera background.") : qsTr("Preview camera to see background blur.")
@@ -44,7 +51,7 @@ Rectangle {
     }
     signal request(string action, var args)
     signal moveRequested()
-    readonly property var cameras: devices.videoInputs
+    readonly property var cameras: CameraChoice.visibleInputs(testing && testCameraInputs !== null ? testCameraInputs : devices.videoInputs, cameraAliases)
     readonly property real cropFraction: 1 / zoom
     readonly property var captureFormat: processor.item ? processor.item.format : ({})
     readonly property int cropWidth: captureFormat.captureWidth ? Math.floor(captureFormat.captureWidth / zoom / 2) * 2 : 0
@@ -93,10 +100,20 @@ Rectangle {
         restoreOnStart = p.restoreOnStart
         mirror = p.mirror === undefined ? true : p.mirror
         dirty = false
+        if (cameraChoiceReady) chooseCamera()
     }
     function accept(action, result) {
         if (action === "read" || action === "save") {
+            if (action === "read") { cameraStartup = true; cameraChoiceReady = false }
             document = result
+            if (cameraPending && action === "save") {
+                cameraPending = false
+                if (savedCamera !== pendingCamera) previewOn = false
+                savedCamera = pendingCamera
+                sourceKind = "local"; sourceHost = ""
+                message = qsTr("Camera ready")
+                return
+            }
             if (mirrorPending && action === "save") {
                 mirrorPending = false
                 mirror = result.profiles[profileIndex].mirror
@@ -106,6 +123,11 @@ Rectangle {
             var index = result.profiles.findIndex(p => p.id === result.activeProfile)
             restore(Math.max(0, index))
             message = action === "save" ? qsTr("Saved to disk and verified · revision %1").arg(result.revision) : result.revision === 0 ? qsTr("New profile. Save to keep your settings.") : qsTr("Profile restored from disk")
+            if (action === "read") refreshCameraInventory()
+        } else if (action === "devices") {
+            cameraAliases = result.aliases || []
+            cameraChoiceReady = true
+            chooseCamera()
         } else if (action === "remote") {
             var items = Array.isArray(result) ? result : (result.cameras || result.hosts || [])
             remoteSummary = items.map(p => p.name || p.hostname || p.host || p.id).join("\n") || JSON.stringify(result).slice(0, 500)
@@ -127,7 +149,7 @@ Rectangle {
         request("save", ["--document", JSON.stringify(next)])
     }
     function toggleMirror() {
-        if (!document || busy || mirrorPending) return
+        if (!document || busy || mirrorPending || cameraPending) return
         var next = JSON.parse(JSON.stringify(document))
         next.profiles[profileIndex].mirror = !mirror
         mirrorPending = true
@@ -136,7 +158,44 @@ Rectangle {
     }
     function fail(message) {
         mirrorPending = false
+        cameraPending = false
         root.message = message
+    }
+    function refreshCameraInventory() {
+        if (!document || testing) return
+        if (busy || mirrorPending || cameraPending) { cameraRefresh.restart(); return }
+        request("devices", [])
+    }
+    function cameraIndex() {
+        for (var i = 0; i < cameras.length; i++)
+            if (String(cameras[i].id) === savedCamera) return i
+        return -1
+    }
+    function chooseCamera() {
+        if (!document || !cameraChoiceReady || mirrorPending || cameraPending) return
+        var id = CameraChoice.pick(cameras, cameraAliases, document.lastCamera || "", cameraStartup ? "" : savedCamera,
+            document.profiles[profileIndex].source.camera, String(devices.defaultVideoInput.id))
+        cameraStartup = false
+        if (id === "") { previewOn = false; savedCamera = ""; message = qsTr("Connect a webcam to get started."); return }
+        var key = CameraChoice.keyFor(id, cameraAliases)
+        if (document.lastCamera === key && document.profiles[profileIndex].source.camera === id) {
+            if (savedCamera !== id) previewOn = false
+            savedCamera = id
+            sourceKind = "local"; sourceHost = ""
+            return
+        }
+        selectCamera(id)
+    }
+    function selectCamera(id) {
+        if (!document || busy || mirrorPending || cameraPending) return
+        var next = JSON.parse(JSON.stringify(document))
+        next.lastCamera = CameraChoice.keyFor(id, cameraAliases)
+        next.profiles[profileIndex].source = { kind: "local", host: "", camera: id }
+        next.activeProfile = next.profiles[profileIndex].id
+        cameraPending = true
+        pendingCamera = id
+        message = qsTr("Remembering camera choice…")
+        request("save", ["--document", JSON.stringify(next)])
     }
     function newProfile() {
         if (!document || dirty) return
@@ -146,7 +205,8 @@ Rectangle {
         next.profiles.push(p); document = next
         restore(next.profiles.length - 1); mark()
     }
-    MediaDevices { id: devices }
+    MediaDevices { id: devices; onVideoInputsChanged: cameraRefresh.restart() }
+    Timer { id: cameraRefresh; interval: 200; onTriggered: root.refreshCameraInventory() }
     Loader {
         id: processor
         active: root.previewOn && root.panelOpen && root.sourceKind === "local" && !root.testing
@@ -198,13 +258,14 @@ Rectangle {
             ComboBox {
                 objectName: "cameraChoice"; Layout.fillWidth: true
                 model: root.cameras; textRole: "description"
-                currentIndex: {
-                    for (var i = 0; i < root.cameras.length; i++)
-                        if (String(root.cameras[i].id) === root.savedCamera) return i
-                    return -1
+                currentIndex: root.cameraIndex()
+                enabled: root.cameraChoiceReady && !root.busy && !root.cameraPending && !root.mirrorPending
+                displayText: root.cameraPending ? qsTr("Selecting camera…") : root.cameraChoiceReady && root.cameras.length === 0 ? qsTr("No webcam connected") : currentIndex < 0 ? qsTr("Detecting connected webcams…") : currentText
+                onActivated: function(index) {
+                    var id = String(root.cameras[index].id)
+                    currentIndex = Qt.binding(function() { return root.cameraIndex() })
+                    root.selectCamera(id)
                 }
-                displayText: currentIndex < 0 ? qsTr("Choose a local camera") : currentText
-                onActivated: function(index) { root.savedCamera = String(root.cameras[index].id); root.sourceKind = "local"; root.sourceHost = ""; root.previewOn = false; root.mark() }
             }
             Rectangle {
                 id: stage
@@ -276,7 +337,7 @@ Rectangle {
                     objectName: "mirrorToggle"
                     text: root.mirrorPending ? qsTr("Mirror (saving…)") : qsTr("Mirror")
                     checked: root.mirror
-                    enabled: root.document !== null && !root.busy && !root.mirrorPending
+                    enabled: root.document !== null && !root.busy && !root.mirrorPending && !root.cameraPending
                     nextCheckState: function() { return checkState }
                     onClicked: root.toggleMirror()
                 }
@@ -284,7 +345,7 @@ Rectangle {
                 LabelText { text: qsTr("Drag the image to frame your shot. Scroll to zoom."); color: "#a9b4c1"; Layout.fillWidth: true }
                 Button {
                     text: root.previewOn ? qsTr("Camera off") : qsTr("Preview camera")
-                    enabled: root.savedCamera !== "" && root.sourceKind === "local" && !root.testing && (root.previewOn || root.backgroundMode !== "image" || root.imageReady)
+                    enabled: root.cameraChoiceReady && !root.cameraPending && root.savedCamera !== "" && root.sourceKind === "local" && !root.testing && (root.previewOn || root.backgroundMode !== "image" || root.imageReady)
                     onClicked: root.previewOn = !root.previewOn
                 }
             }
