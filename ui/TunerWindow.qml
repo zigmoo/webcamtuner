@@ -27,7 +27,10 @@ FloatingWindow {
         id: floatWindow
         interval: 100
         // Only this window is floated; desktop-wide window rules are unnecessary.
-        onTriggered: if (window.visible) Hyprland.dispatch('hl.dsp.window.float({action="set", window=hl.get_window("title:^WebcamTuner$")})')
+        onTriggered: {
+            if (!window.visible || Quickshell.env("QT_QPA_PLATFORM").indexOf("offscreen") !== -1) return
+            Hyprland.dispatch('(function() local w=hl.get_window("title:^WebcamTuner$"); if w then return hl.dsp.window.float({action="set", window=w}) end; return hl.dsp.no_op() end)()')
+        }
     }
     Bridge {
         id: bridge
