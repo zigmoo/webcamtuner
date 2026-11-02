@@ -3,10 +3,12 @@ import QtQuick.Controls
 import QtQuick.Layouts
 
 ScrollView {
+    id: root
     clip: true
+    padding: 22
     contentWidth: availableWidth
     ColumnLayout {
-        width: parent.width
+        width: root.availableWidth
         spacing: 16
         component Plain: Text { color: "#e9ecef"; textFormat: Text.PlainText; wrapMode: Text.WordWrap; Layout.fillWidth: true; font.pixelSize: 14 }
         Plain { text: "WebcamTuner"; font.pixelSize: 24; font.bold: true }
