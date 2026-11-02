@@ -1,5 +1,7 @@
 # WebcamTuner
 
+Public source: [zigmoo/webcamtuner](https://github.com/zigmoo/webcamtuner). Application source is licensed under Apache-2.0; the bundled Robust Video Matting model retains its separate GPL-3.0 license and provenance in models/rvm/. Build and stage the source as described below before installing the plugin.
+
 An Omarchy plugin for persistent webcam framing and appearance profiles. Local camera preview implementation for DIL-3027 (v0.6).
 
 The current preview supports scroll/drag framing, named profiles, persistent crop/background settings, local camera preview with a saved autostart choice with person segmentation and image replacement/blur, and optional remote discovery through the existing webcam_tool. It does not broadcast a virtual camera yet. Opening WebcamTuner starts the remembered camera preview by default. Uncheck Autostart camera below the restore-profile option to start with the camera off instead; Preview camera remains available manually. The bar icon opens a normal floating window; drag the fixed title bar or its grip to move it and resize it with the window manager.
