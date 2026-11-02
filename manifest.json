@@ -7,10 +7,12 @@
   "license": "Apache-2.0 AND GPL-3.0-only",
   "description": "Webcam framing, background preview and snapshots, with user-session camera-output testing.",
   "kinds": [
-    "bar-widget"
+    "bar-widget",
+    "service"
   ],
   "entryPoints": {
-    "barWidget": "BarWidget.qml"
+    "barWidget": "BarWidget.qml",
+    "service": "Service.qml"
   },
   "barWidget": {
     "displayName": "WebcamTuner",
