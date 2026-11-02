@@ -20,11 +20,11 @@ ShellRoot {
  Timer {interval:250;running:true;repeat:true;onTriggered:{
   if(!w.editor.document || w.editor.busy) return
   var tabs=pointer.findChild(w,"navigationTabs")
-  if(phase===0){w.editor.frame(2,0.5,0.5);tabs.currentIndex=1}
+  if(phase===0){w.editor.frame(2,0.5,0.5);pointer.findChild(w.editor,"editorScroll").contentItem.contentY=160;tabs.currentIndex=1}
   if(phase===1){expect(w.editor.section==="background" && w.editor.dirty,"background retains draft");tabs.currentIndex=2}
   if(phase===2){expect(w.editor.section==="setup" && w.editor.zoom===2,"setup retains crop");expect(pointer.findChild(w,"startTestOutput")!==null,"setup output control exists");tabs.currentIndex=3}
   if(phase===3){expect(w.editor.dirty,"about retains draft");tabs.currentIndex=0}
-  if(phase===4){expect(w.editor.section==="camera" && w.editor.zoom===2 && w.editor.dirty,"camera restores same draft");console.log("PASS: four tabs preserve one editor draft");Qt.quit()}
+  if(phase===4){expect(pointer.findChild(w.editor,"editorScroll").contentItem.contentY===0,"camera starts at top");expect(w.editor.section==="camera" && w.editor.zoom===2 && w.editor.dirty,"camera restores same draft");console.log("PASS: four tabs preserve one editor draft");Qt.quit()}
   phase++
  }}
  Timer {interval:10000;running:true;onTriggered:Qt.exit(1)}

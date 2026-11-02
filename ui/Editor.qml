@@ -19,6 +19,9 @@ Rectangle {
     property string message: qsTr("Loading saved profiles…")
     property bool previewOn: false
     property string section: "all"
+    property var backgroundLibrary: ({directory: "", items: []})
+    property bool libraryPending: false
+    property string libraryMessage: ""
     property Component setupContent: null
     property bool testing: false
     property string remoteSummary: ""
@@ -62,10 +65,14 @@ Rectangle {
     readonly property int cropWidth: captureFormat.captureWidth ? Math.floor(captureFormat.captureWidth / zoom / 2) * 2 : 0
     readonly property int cropHeight: captureFormat.captureHeight ? Math.floor(captureFormat.captureHeight / zoom / 2) * 2 : 0
 
+    onSectionChanged: {
+        resetScroll()
+        if (section === "background" && panelOpen) refreshBackgrounds()
+    }
     onPanelOpenChanged: {
         autostartRequested = panelOpen
         if (!panelOpen) previewOn = false
-        else maybeAutostart()
+        else { resetScroll(); maybeAutostart(); if (section === "background") refreshBackgrounds() }
     }
     onBusyChanged: maybeAutostart()
     onImageReadyChanged: maybeAutostart()
@@ -80,6 +87,9 @@ Rectangle {
     component LabelText: Text {
         color: "#e9ecef"; font.pixelSize: 14; textFormat: Text.PlainText
         wrapMode: Text.WordWrap
+    }
+    function resetScroll() {
+        Qt.callLater(function() { if (editorScroll.contentItem) editorScroll.contentItem.contentY = 0 })
     }
     function mark() { dirty = true; message = qsTr("Unsaved changes") }
     function backgroundUrl(path) {
@@ -96,6 +106,18 @@ Rectangle {
         imagePath = path
         backgroundMode = "image"
         mark()
+    }
+    function refreshBackgrounds() {
+        if (busy || libraryPending) { libraryRefresh.restart(); return }
+        libraryPending = true
+        libraryMessage = qsTr("Loading backgrounds…")
+        request("backgrounds", [])
+    }
+    function addBackgrounds(paths) {
+        if (busy || libraryPending) return
+        libraryPending = true
+        libraryMessage = qsTr("Copying and verifying backgrounds…")
+        request("add-backgrounds", ["--paths", JSON.stringify(paths)])
     }
     function previewSettings() {
         if (backgroundMode === "image" && !imageReady) return null
@@ -124,6 +146,20 @@ Rectangle {
         if (cameraChoiceReady) chooseCamera()
     }
     function accept(action, result) {
+        if (action === "backgrounds" || action === "add-backgrounds") {
+            libraryPending = false
+            backgroundLibrary = result
+            libraryMessage = qsTr("%1 saved backgrounds").arg(result.items.length)
+            if (action === "add-backgrounds") {
+                if (result.added.length) {
+                    chooseBackground(result.added[0].path)
+                    libraryMessage = qsTr("Images copied and verified. Save profile to keep this selection.")
+                }
+                if (result.errors.length) libraryMessage += "\n" + result.errors.map(e => e.name + ": " + e.message).join("\n")
+            }
+            if (result.unreadable.length) libraryMessage += "\n" + qsTr("Some files could not be read. Add them again to repair their copies.")
+            return
+        }
         if (action === "read" || action === "save") {
             if (action === "read") { cameraStartup = true; cameraChoiceReady = false }
             document = result
@@ -196,6 +232,7 @@ Rectangle {
         request("save", ["--document", JSON.stringify(next)])
     }
     function fail(message) {
+        if (libraryPending) { libraryPending = false; libraryMessage = message }
         mirrorPending = false
         cameraPending = false
         autostartPending = false
@@ -247,6 +284,7 @@ Rectangle {
         restore(next.profiles.length - 1); mark()
     }
     MediaDevices { id: devices; onVideoInputsChanged: cameraRefresh.restart() }
+    Timer { id: libraryRefresh; interval: 200; onTriggered: root.refreshBackgrounds() }
     Timer { id: cameraRefresh; interval: 200; onTriggered: root.refreshCameraInventory() }
     Loader {
         id: processor
@@ -262,6 +300,8 @@ Rectangle {
         function onFailed(message) { root.previewOn = false; root.message = message }
     }
     ScrollView {
+        id: editorScroll
+        objectName: "editorScroll"
         anchors.fill: parent
         anchors.margins: 22
         clip: true
@@ -291,84 +331,96 @@ Rectangle {
             ColumnLayout {
                 Layout.fillWidth: true
                 visible: root.section === "all" || root.section === "camera"
-            ComboBox {
-                objectName: "cameraChoice"; Layout.fillWidth: true
-                model: root.cameras; textRole: "description"
-                currentIndex: root.cameraIndex()
-                enabled: root.cameraChoiceReady && !root.busy && !root.cameraPending && !root.mirrorPending && !root.autostartPending
-                displayText: root.cameraPending ? qsTr("Selecting camera…") : root.cameraChoiceReady && root.cameras.length === 0 ? qsTr("No webcam connected") : currentIndex < 0 ? qsTr("Detecting connected webcams…") : currentText
-                onActivated: function(index) {
-                    var id = String(root.cameras[index].id)
-                    currentIndex = Qt.binding(function() { return root.cameraIndex() })
-                    root.selectCamera(id)
-                }
-            }
-            Rectangle {
-                id: stage
-                Layout.fillWidth: true; Layout.preferredHeight: width * 9 / 16
-                color: "#0e131b"; clip: true
-                Image {
-                    id: backgroundImage
-                    objectName: "backgroundImage"
-                    anchors.fill: parent
-                    source: root.backgroundMode === "image" ? root.backgroundUrl(root.imagePath) : ""
-                    fillMode: Image.PreserveAspectCrop
-                    asynchronous: true
-                    autoTransform: true
-                    sourceSize.width: 1280
-                    sourceSize.height: 720
-                    visible: root.backgroundMode === "image" && !root.previewOn
-                }
-                Item {
-                    id: source
-                    visible: !root.previewOn || root.testing
-                    transform: Scale { origin.x: stage.width / 2 - source.x; xScale: root.mirror ? -1 : 1 }
-                    width: stage.width * root.zoom; height: stage.height * root.zoom
-                    x: stage.width / 2 - root.centerX * width
-                    y: stage.height / 2 - root.centerY * height
-                    Rectangle {
-                        anchors.fill: parent
-                        color: "transparent"
-                        Rectangle {
-                            anchors.fill: parent
-                            visible: root.backgroundMode !== "image" || !root.imageReady
-                            gradient: Gradient { GradientStop { position: 0; color: "#314d53" } GradientStop { position: 1; color: "#17232c" } }
-                            Repeater {
-                                model: 9
-                                Rectangle { required property int index; x: source.width * (index + 1) / 10; width: 1; height: source.height; color: "#52676c"; opacity: 0.35 }
-                            }
+                RowLayout {
+                    Layout.fillWidth: true
+                    ComboBox {
+                        objectName: "cameraChoice"; Layout.fillWidth: true
+                        model: root.cameras; textRole: "description"
+                        currentIndex: root.cameraIndex()
+                        enabled: root.cameraChoiceReady && !root.busy && !root.cameraPending && !root.mirrorPending && !root.autostartPending
+                        displayText: root.cameraPending ? qsTr("Selecting camera…") : root.cameraChoiceReady && root.cameras.length === 0 ? qsTr("No webcam connected") : currentIndex < 0 ? qsTr("Detecting connected webcams…") : currentText
+                        onActivated: function(index) {
+                            var id = String(root.cameras[index].id)
+                            currentIndex = Qt.binding(function() { return root.cameraIndex() })
+                            root.selectCamera(id)
                         }
-                        Rectangle { x: parent.width * 0.43; y: parent.height * 0.24; width: parent.width * 0.14; height: width; radius: width / 2; color: "#b3c8c4" }
-                        Rectangle { x: parent.width * 0.30; y: parent.height * 0.53; width: parent.width * 0.40; height: parent.height * 0.65; radius: width * 0.3; color: "#88a5a3" }
+                    }
+                    Button {
+                        text: root.previewOn ? qsTr("Camera off") : qsTr("Preview camera")
+                        enabled: root.cameraChoiceReady && !root.cameraPending && root.savedCamera !== "" && root.sourceKind === "local" && !root.testing && (root.previewOn || root.backgroundMode !== "image" || root.imageReady)
+                        onClicked: { root.autostartRequested = false; root.previewOn = !root.previewOn }
                     }
                 }
-                PreviewFrame {
-                    objectName: "processedFrame"
-                    anchors.fill: parent
-                    visible: root.previewOn
-                    source: processor.item ? processor.item.frameUrl : ""
+                Rectangle {
+                    id: stage
+                    Layout.fillWidth: true; Layout.preferredHeight: width * 9 / 16
+                    color: "#0e131b"; clip: true
+                    Image {
+                        id: backgroundImage
+                        objectName: "backgroundImage"
+                        anchors.fill: parent
+                        source: root.backgroundMode === "image" ? root.backgroundUrl(root.imagePath) : ""
+                        fillMode: Image.PreserveAspectCrop
+                        asynchronous: true
+                        autoTransform: true
+                        sourceSize.width: 1280
+                        sourceSize.height: 720
+                        visible: root.backgroundMode === "image" && !root.previewOn
+                    }
+                    Item {
+                        id: source
+                        visible: !root.previewOn || root.testing
+                        transform: Scale { origin.x: stage.width / 2 - source.x; xScale: root.mirror ? -1 : 1 }
+                        width: stage.width * root.zoom; height: stage.height * root.zoom
+                        x: stage.width / 2 - root.centerX * width
+                        y: stage.height / 2 - root.centerY * height
+                        Rectangle {
+                            anchors.fill: parent
+                            color: "transparent"
+                            Rectangle {
+                                anchors.fill: parent
+                                visible: root.backgroundMode !== "image" || !root.imageReady
+                                gradient: Gradient { GradientStop { position: 0; color: "#314d53" } GradientStop { position: 1; color: "#17232c" } }
+                                Repeater {
+                                    model: 9
+                                    Rectangle { required property int index; x: source.width * (index + 1) / 10; width: 1; height: source.height; color: "#52676c"; opacity: 0.35 }
+                                }
+                            }
+                            Rectangle { x: parent.width * 0.43; y: parent.height * 0.24; width: parent.width * 0.14; height: width; radius: width / 2; color: "#b3c8c4" }
+                            Rectangle { x: parent.width * 0.30; y: parent.height * 0.53; width: parent.width * 0.40; height: parent.height * 0.65; radius: width * 0.3; color: "#88a5a3" }
+                        }
+                    }
+                    PreviewFrame {
+                        objectName: "processedFrame"
+                        anchors.fill: parent
+                        visible: root.previewOn
+                        source: processor.item ? processor.item.frameUrl : ""
+                    }
+                    LabelText {
+                        anchors.left: parent.left; anchors.top: parent.top; anchors.margins: 12
+                        text: root.previewOn ? (processor.item && processor.item.frameUrl !== "" ? qsTr("PROCESSED CAMERA PREVIEW") : qsTr("STARTING CAMERA…")) : qsTr("FRAMING TEST CARD · camera off")
+                        font.pixelSize: 10; font.bold: true
+                    }
+                    LabelText { anchors.right: parent.right; anchors.bottom: parent.bottom; anchors.margins: 12; text: root.zoom.toFixed(2) + "×"; font.bold: true }
+                    MouseArea {
+                        anchors.fill: parent; preventStealing: true
+                        property real startX; property real startY; property real startCX; property real startCY
+                        cursorShape: root.zoom > 1 ? (pressed ? Qt.ClosedHandCursor : Qt.OpenHandCursor) : Qt.ArrowCursor
+                        onPressed: function(mouse) { startX = mouse.x; startY = mouse.y; startCX = root.centerX; startCY = root.centerY }
+                        onPositionChanged: function(mouse) { if (pressed && root.zoom > 1) root.frame(root.zoom, startCX + (root.mirror ? 1 : -1) * (mouse.x - startX) / source.width, startCY - (mouse.y - startY) / source.height) }
+                        onWheel: function(wheel) { root.frame(root.zoom + (wheel.angleDelta.y > 0 ? 0.1 : -0.1), root.centerX, root.centerY); wheel.accepted = true }
+                    }
                 }
                 LabelText {
-                    anchors.left: parent.left; anchors.top: parent.top; anchors.margins: 12
-                    text: root.previewOn ? (processor.item && processor.item.frameUrl !== "" ? qsTr("PROCESSED CAMERA PREVIEW") : qsTr("STARTING CAMERA…")) : qsTr("FRAMING TEST CARD · camera off")
-                    font.pixelSize: 10; font.bold: true
+                    text: qsTr("Zoom in, then drag the image above to adjust framing.")
+                    color: "#a9b4c1"
+                    Layout.fillWidth: true
                 }
-                LabelText { anchors.right: parent.right; anchors.bottom: parent.bottom; anchors.margins: 12; text: root.zoom.toFixed(2) + "×"; font.bold: true }
-                MouseArea {
-                    anchors.fill: parent; preventStealing: true
-                    property real startX; property real startY; property real startCX; property real startCY
-                    cursorShape: root.zoom > 1 ? (pressed ? Qt.ClosedHandCursor : Qt.OpenHandCursor) : Qt.ArrowCursor
-                    onPressed: function(mouse) { startX = mouse.x; startY = mouse.y; startCX = root.centerX; startCY = root.centerY }
-                    onPositionChanged: function(mouse) { if (pressed && root.zoom > 1) root.frame(root.zoom, startCX + (root.mirror ? 1 : -1) * (mouse.x - startX) / source.width, startCY - (mouse.y - startY) / source.height) }
-                    onWheel: function(wheel) { root.frame(root.zoom + (wheel.angleDelta.y > 0 ? 0.1 : -0.1), root.centerX, root.centerY); wheel.accepted = true }
+                RowLayout {
+                    LabelText { text: qsTr("Camera zoom"); Layout.preferredWidth: 95 }
+                    Slider { objectName: "zoomSlider"; Layout.fillWidth: true; from: 1; to: 4; value: root.zoom; stepSize: 0.05; onMoved: root.frame(value, root.centerX, root.centerY) }
+                    Button { text: qsTr("Reset frame"); onClicked: root.frame(1, 0.5, 0.5) }
                 }
-            }
-            RowLayout {
-                LabelText { text: qsTr("Zoom"); Layout.preferredWidth: 45 }
-                Slider { objectName: "zoomSlider"; Layout.fillWidth: true; from: 1; to: 4; value: root.zoom; stepSize: 0.05; onMoved: root.frame(value, root.centerX, root.centerY) }
-                Button { text: qsTr("Reset frame"); onClicked: root.frame(1, 0.5, 0.5) }
-            }
-            RowLayout {
                 CheckBox {
                     objectName: "mirrorToggle"
                     text: root.mirrorPending ? qsTr("Mirror (saving…)") : qsTr("Mirror")
@@ -377,50 +429,52 @@ Rectangle {
                     nextCheckState: function() { return checkState }
                     onClicked: root.toggleMirror()
                 }
-                Layout.fillWidth: true
-                LabelText { text: qsTr("Drag the image to frame your shot. Scroll to zoom."); color: "#a9b4c1"; Layout.fillWidth: true }
-                Button {
-                    text: root.previewOn ? qsTr("Camera off") : qsTr("Preview camera")
-                    enabled: root.cameraChoiceReady && !root.cameraPending && root.savedCamera !== "" && root.sourceKind === "local" && !root.testing && (root.previewOn || root.backgroundMode !== "image" || root.imageReady)
-                    onClicked: { root.autostartRequested = false; root.previewOn = !root.previewOn }
+                LabelText {
+                    text: root.cropWidth > 0
+                        ? qsTr("Capture %1 × %2 at %3 fps · crop %4 × %5 · scaled preview %6 × %7")
+                            .arg(root.captureFormat.captureWidth).arg(root.captureFormat.captureHeight).arg(Math.round(root.captureFormat.captureFps))
+                            .arg(root.cropWidth).arg(root.cropHeight).arg(root.captureFormat.previewWidth).arg(root.captureFormat.previewHeight)
+                        : qsTr("Start preview to see the negotiated capture resolution and available crop detail.")
+                    font.pixelSize: 12; color: "#a9b4c1"; Layout.fillWidth: true
                 }
-            }
-            LabelText {
-                text: root.cropWidth > 0
-                    ? qsTr("Capture %1 × %2 at %3 fps · crop %4 × %5 · scaled preview %6 × %7")
-                        .arg(root.captureFormat.captureWidth).arg(root.captureFormat.captureHeight).arg(Math.round(root.captureFormat.captureFps))
-                        .arg(root.cropWidth).arg(root.cropHeight).arg(root.captureFormat.previewWidth).arg(root.captureFormat.previewHeight)
-                    : qsTr("Start preview to see the negotiated capture resolution and available crop detail.")
-                font.pixelSize: 12; color: "#a9b4c1"; Layout.fillWidth: true
-            }
             }
             Rectangle { Layout.fillWidth: true; height: 1; color: "#39414b" }
             ColumnLayout {
                 Layout.fillWidth: true
                 visible: root.section === "all" || root.section === "background"
-            LabelText { text: qsTr("Background"); font.bold: true }
-            RowLayout {
-                Repeater {
-                    model: [{ mode: "none", label: qsTr("Original") }, { mode: "blur", label: qsTr("Blur") }, { mode: "image", label: qsTr("Image") }]
-                    Button {
-                        required property var modelData
-                        text: modelData.label; highlighted: root.backgroundMode === modelData.mode
-                        onClicked: { root.backgroundMode = modelData.mode; root.mark() }
+                LabelText { text: qsTr("Background"); font.bold: true }
+                RowLayout {
+                    Repeater {
+                        model: [{ mode: "none", label: qsTr("Original") }, { mode: "blur", label: qsTr("Blur") }, { mode: "image", label: qsTr("Image") }]
+                        Button {
+                            required property var modelData
+                            text: modelData.label; highlighted: root.backgroundMode === modelData.mode
+                            onClicked: { root.backgroundMode = modelData.mode; root.mark() }
+                        }
                     }
+                    LabelText { text: qsTr("Local camera effects"); color: "#bdc5cf"; font.pixelSize: 11; Layout.fillWidth: true }
                 }
-                LabelText { text: qsTr("Local camera effects"); color: "#bdc5cf"; font.pixelSize: 11; Layout.fillWidth: true }
-            }
-            RowLayout {
-                Layout.fillWidth: true; visible: root.backgroundMode === "image"
-                TextField {
-                    objectName: "backgroundPath"
+                RowLayout {
+                    Layout.fillWidth: true; visible: root.backgroundMode === "image"
+                    TextField {
+                        objectName: "backgroundPath"
+                        Layout.fillWidth: true
+                        text: root.imagePath; placeholderText: qsTr("Paste the absolute path to your background image")
+                        onTextEdited: root.chooseBackground(text)
+                    }
+                    Button { text: qsTr("Add this image"); enabled: !root.busy && !root.libraryPending && root.imagePath !== ""; onClicked: root.addBackgrounds([root.imagePath]) }
+                }
+                BackgroundLibrary {
                     Layout.fillWidth: true
-                    text: root.imagePath; placeholderText: qsTr("Paste the absolute path to your background image")
-                    onTextEdited: root.chooseBackground(text)
+                    library: root.backgroundLibrary
+                    selectedPath: root.imagePath
+                    busy: root.busy || root.libraryPending
+                    onAddRequested: imageDialog.open()
+                    onRefreshRequested: root.refreshBackgrounds()
+                    onSelected: function(path) { root.chooseBackground(path) }
                 }
-                Button { text: qsTr("Browse…"); onClicked: imageDialog.open() }
-            }
-            LabelText { objectName: "backgroundFeedback"; visible: root.backgroundMode !== "none"; text: root.backgroundFeedback; color: root.backgroundMode === "image" && !root.imageReady ? "#f1b58a" : root.accent; Layout.fillWidth: true }
+                LabelText { text: root.libraryMessage; visible: text !== ""; color: root.accent; Layout.fillWidth: true }
+                LabelText { objectName: "backgroundFeedback"; visible: root.backgroundMode !== "none"; text: root.backgroundFeedback; color: root.backgroundMode === "image" && !root.imageReady ? "#f1b58a" : root.accent; Layout.fillWidth: true }
             }
             CheckBox {
                 objectName: "restoreToggle"
@@ -500,8 +554,9 @@ Rectangle {
     }
     FileDialog {
         id: imageDialog
-        title: qsTr("Choose a webcam background")
-        nameFilters: [qsTr("Images (*.jpg *.jpeg *.png *.webp *.bmp)"), qsTr("All files (*)")]
-        onAccepted: root.chooseBackground(String(selectedFile))
+        title: qsTr("Add backgrounds to WebcamTuner")
+        fileMode: FileDialog.OpenFiles
+        nameFilters: [qsTr("Images (*.jpg *.jpeg *.png *.webp)")]
+        onAccepted: root.addBackgrounds(selectedFiles.map(path => String(path)))
     }
 }

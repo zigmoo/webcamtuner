@@ -1,9 +1,10 @@
 import { Cli, z } from 'incur'
 import { execFileSync } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
 import { readStore, saveStore, storePath, cropPixels } from './profiles.js'
 import { cameraAliases } from './cameras.js'
 
-const cli = Cli.create('webcamtuner', { version: '0.7.0', description: 'WebcamTuner preview: persist camera framing and background profiles. Preview autostart is a saved profile choice.' })
+const cli = Cli.create('webcamtuner', { version: '0.7.1', description: 'WebcamTuner preview: persist camera framing and background profiles. Preview autostart is a saved profile choice.' })
 cli.command('read', { description: 'Read profiles and their revision without starting capture', run: () => readStore() })
 cli.command('devices', { description: 'Read stable local webcam identifiers without opening a camera', run: () => ({ aliases: cameraAliases() }) })
 cli.command('save', {
@@ -18,6 +19,20 @@ cli.command('plan', {
     const store = readStore(), profile = store.profiles.find(p => p.id === store.activeProfile)!
     return { profile, crop: cropPixels(profile.crop, c.options.width, c.options.height), output: 'not-implemented', backgrounds: 'local-preview' }
   },
+})
+function backgroundLibrary(action: string, paths?: string) {
+  const args = [fileURLToPath(new URL('../bin/background-library.py', import.meta.url)), action]
+  if (paths) args.push('--paths', paths)
+  return JSON.parse(execFileSync('python3', args, { encoding: 'utf8', timeout: 60000, maxBuffer: 1048576 }))
+}
+cli.command('backgrounds', {
+  description: 'List managed backgrounds and their storage directory',
+  run: () => backgroundLibrary('list'),
+})
+cli.command('add-backgrounds', {
+  description: 'Validate and copy images into the user background library, then read them back',
+  options: z.object({ paths: z.string().max(90000).describe('JSON array of absolute local paths or file URLs') }),
+  run: c => backgroundLibrary('add', c.options.paths),
 })
 cli.command('remote', {
   description: 'Inspect hosts or devices through the existing webcam_tool; never starts a viewer or remote capture',

@@ -45,6 +45,12 @@ FloatingWindow {
         editor.previewOn = false
         tabs.currentIndex = 2
     }
+    function openBackgrounds() {
+        openEditor()
+        editor.autostartRequested = false
+        editor.previewOn = false
+        tabs.currentIndex = 1
+    }
     function closeEditor() { editor.previewOn = false; visible = false }
     function toggleCollapse() {
         if (!collapsed) {
