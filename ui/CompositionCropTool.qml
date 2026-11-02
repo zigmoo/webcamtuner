@@ -8,6 +8,7 @@ ColumnLayout {
     property var cameraCrop: ({zoom:1,centerX:.5,centerY:.5})
     property var backgroundCrop: ({zoom:1,centerX:.5,centerY:.5})
     property bool mirror: true
+    property bool cameraActive: false
     property bool backgroundAvailable: false
     property bool backgroundLocked: false
     property url cameraSource
@@ -73,11 +74,11 @@ ColumnLayout {
                     crop: root.target === "camera" ? ({zoom:root.cameraCrop.zoom,centerX:root.mirror?1-root.cameraCrop.centerX:root.cameraCrop.centerX,centerY:root.cameraCrop.centerY}) : root.backgroundCrop
                     maximumZoom: root.maximumZoom
                     locked: root.target === "background" && root.backgroundLocked
+                    loadingText: root.target!=="camera"?qsTr("Loading image…"):root.cameraActive?qsTr("Waiting for live camera frames…"):qsTr("Start Preview camera to crop the live source")
                     onEdited: function(value) {
                         if (root.target === "camera" && root.mirror) value = {zoom:value.zoom,centerX:1-value.centerX,centerY:value.centerY}
                         root.edit(value)
                     }
-                    Label { anchors.centerIn: parent; visible: root.target === "camera" && root.cameraSource.toString() === ""; text: qsTr("Start Preview camera to crop the live source"); wrapMode: Text.WordWrap; width: parent.width-50; color:"#e9ecef" }
                 }
                 ColumnLayout {
                     Layout.preferredWidth: 260

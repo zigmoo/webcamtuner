@@ -90,6 +90,9 @@ Rectangle {
     readonly property var cameras: CameraChoice.visibleInputs(testing && testCameraInputs !== null ? testCameraInputs : devices.videoInputs, cameraAliases)
     readonly property real cropFraction: 1 / zoom
     readonly property var captureFormat: processor.item ? processor.item.format : ({})
+    property bool previewDecoded: false
+    readonly property bool previewReady: previewOn && previewDecoded && processor.item!==null && processor.item.frameUrl!==""
+    onPreviewOnChanged: if(!previewOn)previewDecoded=false
     readonly property int cropWidth: captureFormat.captureWidth ? Math.floor(captureFormat.captureWidth / zoom / 2) * 2 : 0
     readonly property int cropHeight: captureFormat.captureHeight ? Math.floor(captureFormat.captureHeight / zoom / 2) * 2 : 0
 
@@ -731,17 +734,13 @@ Rectangle {
                         anchors.fill: parent
                         visible: root.previewOn
                         source: processor.item ? processor.item.frameUrl : ""
-                        onFrameDecoded: fpsBadge.frameReady()
+                        onFrameDecoded: {root.previewDecoded=true;fpsBadge.frameReady()}
                     }
-                    Column {
-                        anchors.right:parent.right;anchors.top:parent.top;anchors.margins:10
-                        spacing:4
-                        FpsIndicator {id:fpsBadge;active:root.previewOn;anchors.right:parent.right}
-                        BackendIndicator {visible:root.previewOn;provider:root.captureFormat.provider||"";anchors.right:parent.right}
-                    }
+                    FpsIndicator {id:fpsBadge;active:root.previewOn;anchors.right:parent.right;anchors.top:parent.top;anchors.margins:10}
+                    BackendIndicator {visible:root.previewOn;provider:root.captureFormat.provider||"";anchors.left:parent.left;anchors.top:parent.top;anchors.margins:10}
                     LabelText {
                         anchors.left: parent.left; anchors.top: parent.top; anchors.margins: 12
-                        visible:stage.width>=380
+                        visible:!root.previewOn && stage.width>=380
                         text: root.previewOn ? (processor.item && processor.item.frameUrl !== "" ? qsTr("PROCESSED CAMERA PREVIEW") : qsTr("STARTING CAMERA…")) : qsTr("FRAMING TEST CARD · camera off")
                         font.pixelSize: 10; font.bold: true
                     }
@@ -805,6 +804,7 @@ Rectangle {
                     cameraCrop:({zoom:root.zoom,centerX:root.centerX,centerY:root.centerY})
                     backgroundCrop:root.backgroundCrop
                     mirror:root.mirror
+                    cameraActive:root.previewOn
                     backgroundAvailable:root.backgroundMode==="image"&&root.imageReady
                     backgroundLocked:root.backgroundLocked
                     cameraSource:processor.item?processor.item.sourceFrameUrl:""

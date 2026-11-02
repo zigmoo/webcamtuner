@@ -10,9 +10,20 @@ Rectangle {
     property var crop: ({zoom: 1, centerX: 0.5, centerY: 0.5})
     property bool locked: false
     property real maximumZoom: 32
+    property bool hasFrame: false
+    property real frameAspect: 16 / 9
+    property bool streamSource: false
+    property string loadingText: qsTr("Loading image…")
+    onImageSourceChanged: {
+        var stream=imageSource.toString().indexOf("data:image/")===0
+        if(!stream || !streamSource || imageSource.toString()==="")hasFrame=false
+        streamSource=stream
+    }
     readonly property real aspect: 16 / 9
-    readonly property rect imageBounds: Qt.rect(photo.x + (photo.width - photo.paintedWidth) / 2,
-        photo.y + (photo.height - photo.paintedHeight) / 2, photo.paintedWidth, photo.paintedHeight)
+    readonly property rect imageBounds: {
+        var w=Math.min(Math.max(0,width-36),Math.max(0,height-36)*frameAspect),h=w/frameAspect
+        return Qt.rect((width-w)/2,(height-h)/2,w,h)
+    }
     readonly property real widestCrop: Math.min(imageBounds.width, imageBounds.height * aspect)
     readonly property rect selection: {
         var w = widestCrop / crop.zoom, h = w / aspect, b = imageBounds
@@ -51,11 +62,15 @@ Rectangle {
         autoTransform: true
         fillMode: Image.PreserveAspectFit
         sourceSize: Qt.size(2048, 2048)
+        onStatusChanged: if(status===Image.Ready){
+            if(implicitWidth>0&&implicitHeight>0)root.frameAspect=implicitWidth/implicitHeight
+            root.hasFrame=true
+        }
     }
     MouseArea {
         objectName: "cropNewSelection"
         anchors.fill: parent
-        enabled: photo.status === Image.Ready && !root.locked
+        enabled: root.hasFrame && !root.locked
         preventStealing: true
         cursorShape: Qt.CrossCursor
         property point start
@@ -98,7 +113,7 @@ Rectangle {
         MouseArea {
             objectName: "cropMoveSelection"
             anchors.fill: parent
-            enabled: !root.locked
+            enabled: root.hasFrame && !root.locked
             preventStealing: true
             cursorShape: pressed ? Qt.ClosedHandCursor : Qt.OpenHandCursor
             property point startPointer
@@ -120,7 +135,7 @@ Rectangle {
             y: root.selection.y + (modelData.y + 1) * root.selection.height / 2 - height / 2
             width: 12; height: 12; radius: 2
             color: "#e9ecef"; border.color: "#284c44"
-            visible: photo.status === Image.Ready && !root.locked
+            visible: root.hasFrame && !root.locked
             MouseArea {
                 objectName: "cropHandle-" + parent.modelData.name
                 anchors.fill: parent; anchors.margins: -6
@@ -139,9 +154,10 @@ Rectangle {
         }
     }
     Label {
+        objectName: "cropLoadingHint"
         anchors.centerIn: parent
-        visible: photo.status !== Image.Ready
-        text: photo.status === Image.Error ? qsTr("Cannot load this background") : qsTr("Loading image…")
+        visible: !root.hasFrame
+        text: photo.status === Image.Error ? qsTr("Cannot load this image") : root.loadingText
         color: "#e9ecef"
     }
 }

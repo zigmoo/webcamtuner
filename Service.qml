@@ -36,7 +36,7 @@ Scope {
         function status(): string {
             return JSON.stringify({ version: BuildInfo.version, section:panel.editor.section, opened: root.opened, collapsed: panel.collapsed, width: panel.width, height: panel.height,
                 busy: panel.editor.busy, dirty: panel.editor.dirty, message: panel.editor.message,
-                mirror: panel.editor.mirror, autostartCamera: panel.editor.autostartCamera, previewOn: panel.editor.previewOn,
+                mirror: panel.editor.mirror, autostartCamera: panel.editor.autostartCamera, previewOn: panel.editor.previewOn, previewReady:panel.editor.previewReady, processingBackend:panel.editor.captureFormat.provider||"",
                 sharedControls: true, draftRecovery: true, autosave: true, labelEditing:panel.editor.labelEditing, labelPending:panel.editor.labelInFlight!==null || Object.keys(panel.editor.labelDrafts).length>0, saving: panel.editor.savePending, saveFailed: panel.editor.saveFailed || panel.editor.labelSaveFailed, revision: panel.editor.document ? panel.editor.document.revision : -1, broadcasting: false })
         }
     }

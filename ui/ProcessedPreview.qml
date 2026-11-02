@@ -18,6 +18,8 @@ Item {
     property int appliedGeneration: -1
     property bool snapshotPending: false
     property string snapshotRequestId: ""
+    property bool starting: false
+    property bool shuttingDown: false
     readonly property bool snapshotReady: active && frameUrl !== "" && !updateDelay.running && desiredGeneration === appliedGeneration && !snapshotPending
     signal snapshotSaved(var result)
     signal snapshotFailed(string message)
@@ -40,19 +42,29 @@ Item {
     signal frameReceived(string mode)
     function activate() {
         if (active) {
+            if(!configuration || !configuration.camera || !configuration.crop || !configuration.background || starting || process.running)return
+            starting=true
             frameUrl = ""
             labelBitmapUrl="";labelBitmapKey=""
             process.command = [pluginRoot + "/bin/preview-python", pluginRoot + "/bin/process_preview.py", "--ui-overlay", "--request", JSON.stringify(Object.assign({}, configuration, {configurationRevision: desiredGeneration}))]
             process.running = true
+            firstFrameTimeout.restart()
         } else {
+            starting=false
+            firstFrameTimeout.stop()
             process.running = false
             frameUrl = ""
             sourceFrameUrl = ""
         }
     }
     onActiveChanged: activate()
-    onConfigurationChanged: { desiredGeneration++; updateDelay.restart() }
-    Component.onDestruction: process.running = false
+    onConfigurationChanged: { desiredGeneration++; if(active&&!process.running&&!starting)activate(); else updateDelay.restart() }
+    Component.onDestruction: {root.shuttingDown=true;process.running=false}
+    Timer {
+        id: firstFrameTimeout
+        interval: 15000
+        onTriggered: if(root.active&&root.frameUrl==="")root.failed(qsTr("Camera did not deliver a preview. Check the connection and try Preview camera again."))
+    }
     Timer {
         id: updateDelay
         interval: 180
@@ -76,6 +88,7 @@ Item {
                     }
                     else if (value.error) root.failed(String(value.error))
                     else if (value.frame) {
+                        firstFrameTimeout.stop()
                         root.appliedGeneration = value.configurationRevision || 0
                         root.format = { captureWidth: value.captureWidth, captureHeight: value.captureHeight,
                             captureFps: value.captureFps, retainedWidth: value.retainedWidth, retainedHeight: value.retainedHeight,
@@ -91,7 +104,9 @@ Item {
         }
         stderr: StdioCollector { id: errors; waitForEnd: true }
         onExited: function(code) {
-            if (root.active && code !== 0)
+            root.starting=false
+            firstFrameTimeout.stop()
+            if (root.active && !root.shuttingDown)
                 root.failed(String(errors.text || "Camera preview stopped").slice(0, 400))
         }
     }
