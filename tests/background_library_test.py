@@ -122,6 +122,59 @@ class LibraryTests(unittest.TestCase):
             library.save_crop(first['path'], {'zoom': 0, 'centerX': 0.5, 'centerY': 0.5})
         self.assertEqual(library.listing(first['path'])['selected']['crop'], crop)
 
+    def test_lock_and_os_trash_cleanup(self):
+        from urllib.parse import unquote
+        image = library.add([str(self.source)])['added'][0]
+        crop = {'zoom':2,'centerX':0.5,'centerY':0.5}
+        library.save_crop(image['path'], crop)
+        library.label_image(image['path'], image['id'], 'Morning light')
+        library.lock_image(image['path'], image['id'], True)
+        self.assertTrue(library.listing()['items'][0]['locked'])
+        with self.assertRaises(ValueError):library.save_crop(image['path'], crop)
+        with self.assertRaises(ValueError):library.trash_image(image['path'], image['id'], [])
+        self.assertTrue(Path(image['path']).exists())
+        library.lock_image(image['path'], image['id'], False)
+        result = library.trash_image(image['path'], image['id'], [])
+        self.assertEqual(result['items'], [])
+        self.assertFalse(Path(image['path']).exists())
+        trash = self.root/'data/Trash'
+        self.assertEqual(len(list((trash/'files').iterdir())),1)
+        info = next((trash/'info').glob('*.trashinfo')).read_text()
+        self.assertIn('Path='+image['path'],unquote(info))
+        self.assertNotIn(image['id'], library.read_settings()['crops'])
+        self.assertNotIn(image['id'], library.read_settings()['locks'])
+        self.assertNotIn(image['id'], library.read_settings()['labels'])
+        self.assertFalse(library.local_path(image['thumbnail']).exists())
+        self.assertTrue(self.source.exists())
+
+    def test_trash_keeps_crop_for_remaining_duplicate(self):
+        image = library.add([str(self.source)])['added'][0]
+        folder,_ = library.directories();duplicate=folder/'Duplicate.jpeg';duplicate.write_bytes(self.source.read_bytes())
+        crop={'zoom':2,'centerX':0.5,'centerY':0.5};library.save_crop(image['path'],crop)
+        result=library.trash_image(image['path'],image['id'],[])
+        self.assertEqual(len(result['items']),1)
+        self.assertEqual(result['items'][0]['crop'],crop)
+        self.assertTrue(library.local_path(image['thumbnail']).exists())
+
+    def test_optional_label_survives_reload_crop_and_lock_without_renaming(self):
+        image = library.add([str(self.source)])['added'][0]
+        path = Path(image['path']); original = path.read_bytes()
+        crop = {'zoom': 2, 'centerX': .5, 'centerY': .5}
+        library.save_crop(str(path), crop)
+        library.lock_image(str(path), image['id'], True)
+        result = library.label_image(str(path), image['id'], '  Morning light ☀  ')
+        labelled = result['items'][0]
+        self.assertEqual(labelled['label'], 'Morning light ☀')
+        self.assertEqual(labelled['path'], image['path'])
+        self.assertEqual(path.read_bytes(), original)
+        self.assertEqual(labelled['crop'], crop)
+        self.assertTrue(labelled['locked'])
+        self.assertEqual(library.listing()['items'][0]['label'], 'Morning light ☀')
+        for invalid in ('x' * 81, 'line\nbreak'):
+            with self.assertRaises(ValueError): library.label_image(str(path), image['id'], invalid)
+        self.assertEqual(library.listing()['items'][0]['label'], 'Morning light ☀')
+        self.assertEqual(library.label_image(str(path), image['id'], '')['items'][0]['label'], '')
+
     def test_path_and_batch_limits(self):
         for values in ([], ['relative.jpg'], ['https://example.com/image.jpg'], [str(self.source)] * 21):
             if len(values) in (0, 21):

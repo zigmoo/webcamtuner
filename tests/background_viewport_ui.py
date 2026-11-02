@@ -24,7 +24,7 @@ failures=[];finished=False
 
 def normal():
  try:
-  for name in ('backgroundZoom','saveButton','backgroundPreviewStage'):
+  for name in ('backgroundZoom','profileSaveState'):
    item=editor.findChild(QObject,name);point=item.mapToItem(editor,QPointF(0,0))
    assert point.y()>=0 and point.y()+item.height()<=editor.height(),(name,point.y(),item.height(),editor.height())
   assert v.grabWindow().save(str(Path(os.environ['WEBCAMTUNER_TEST_ROOT'])/'background-layout-fixed.png'))
@@ -35,6 +35,7 @@ def scroll_into_view():
   global flick,stage,before
   scroll=editor.findChild(QObject,'editorScroll');flick=scroll.property('contentItem');stage=editor.findChild(QObject,'backgroundPreviewStage')
   bar=editor.findChild(QObject,'editorScrollbar');assert bar.property('visible')
+  assert bar.height()>200 and bar.mapToItem(editor,QPointF(0,0)).x()>editor.width()-50
   y=stage.mapToItem(editor,QPointF(0,0)).y();flick.setProperty('contentY',max(0,flick.property('contentY')+y-140))
   QTimer.singleShot(100,wheel)
  except Exception as e:failures.append(str(e));app.quit()
@@ -52,7 +53,7 @@ def finish():
   assert flick.property('contentY')<before,'Wheel over the image must scroll the page'
   assert ev('backgroundCrop.zoom')==1,'Plain scrolling must not change background zoom'
   flick.setProperty('contentY',flick.property('contentHeight'))
-  item=editor.findChild(QObject,'saveButton');point=item.mapToItem(editor,QPointF(0,0));assert 0<=point.y()<editor.height()
+  item=editor.findChild(QObject,'profileSaveState');point=item.mapToItem(editor,QPointF(0,0));assert 0<=point.y()<editor.height()
   finished=True;print('PASS: bounded background editor, pinned actions, visible overflow scrollbar and ordinary wheel scrolling')
  except Exception as e:failures.append(str(e))
  app.quit()

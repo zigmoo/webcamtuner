@@ -3,6 +3,7 @@
 import argparse
 import hashlib
 import fcntl
+import subprocess
 import math
 import io
 import json
@@ -112,13 +113,13 @@ def crop_file():
     return directory / 'background-crops.json'
 
 
-def read_crops():
+def read_settings():
     path = crop_file()
     if not path.exists():
-        return {}
+        return {'schemaVersion': 1, 'crops': {}, 'locks': {}, 'labels': {}}
     with path.open('rb') as stream:
-        data = stream.read(262145)
-    if len(data) > 262144:
+        data = stream.read(1048577)
+    if len(data) > 1048576:
         raise ValueError('Background settings exceed their size limit.')
     value = json.loads(data)
     if not isinstance(value, dict) or value.get('schemaVersion') != 1 or not isinstance(value.get('crops'), dict):
@@ -127,7 +128,17 @@ def read_crops():
         if not re.fullmatch('[a-f0-9]{64}', key):
             raise ValueError('Invalid background identity.')
         validate_crop(crop)
-    return value['crops']
+    locks = value.setdefault('locks', {})
+    if not isinstance(locks, dict) or any(not re.fullmatch('[a-f0-9]{64}', key) or not isinstance(locked, bool) for key, locked in locks.items()):
+        raise ValueError('Invalid background locks.')
+    labels = value.setdefault('labels', {})
+    if not isinstance(labels, dict) or any(not re.fullmatch('[a-f0-9]{64}', key) or not isinstance(label, str) or len(label) > 80 or any(ord(c) < 32 for c in label) for key, label in labels.items()):
+        raise ValueError('Invalid background labels.')
+    return value
+
+
+def read_crops():
+    return read_settings()['crops']
 
 
 def thumbnail(image, digest, cache):
@@ -142,7 +153,7 @@ def thumbnail(image, digest, cache):
     return target
 
 
-def entry(path, cache, crops=None):
+def entry(path, cache, crops=None, locks=None, labels=None):
     # Cache identities by file metadata: polling does not rehash/decode every image.
     before = path.lstat()
     if not stat.S_ISREG(before.st_mode) or before.st_size > MAX_BYTES:
@@ -175,25 +186,28 @@ def entry(path, cache, crops=None):
         cached = {'stamp': stamp, 'digest': digest}
         atomic_write(index, json.dumps(cached).encode())
     digest = cached['digest']
-    crops = read_crops() if crops is None else crops
+    settings = read_settings() if crops is None or locks is None or labels is None else None
+    crops = settings['crops'] if crops is None else crops
+    locks = settings['locks'] if locks is None else locks
+    labels = settings['labels'] if labels is None else labels
     return {'id': digest, 'name': display_name(path), 'path': str(path),
-            'thumbnail': (cache / (digest + '.jpg')).as_uri(), 'crop': crops.get(digest, default_crop())}
+            'thumbnail': (cache / (digest + '.jpg')).as_uri(), 'crop': crops.get(digest, default_crop()), 'locked': locks.get(digest, False), 'label': labels.get(digest, '')}
 
 
 def listing(selected_path=None):
     library, cache = directories()
     items, failures = [], []
-    crops = read_crops()
+    settings = read_settings(); crops = settings['crops']; locks = settings['locks']; labels = settings['labels']
     images = files(library)
     for path in images[:MAX_IMAGES]:
         try:
-            items.append(entry(path, cache, crops))
+            items.append(entry(path, cache, crops, locks, labels))
         except (OSError, ValueError, Image.DecompressionBombError, Image.DecompressionBombWarning):
             failures.append(display_name(path))
     result = {'directory': str(library), 'items': items, 'unreadable': failures, 'limited': len(images) > MAX_IMAGES}
     if selected_path:
         try:
-            selected = entry(local_path(selected_path), cache, crops)
+            selected = entry(local_path(selected_path), cache, crops, locks, labels)
             selected['hasCrop'] = selected['id'] in crops
             result['selected'] = selected
         except (OSError, ValueError, Image.DecompressionBombError, Image.DecompressionBombWarning):
@@ -211,16 +225,118 @@ def save_crop(value, crop):
     lock = os.open(str(settings) + '.lock', os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
     try:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        crops = read_crops()
+        document = read_settings(); crops = document['crops']
+        if document['locks'].get(image['id'], False):
+            raise ValueError('Unlock this background before changing its crop.')
         if image['id'] not in crops and len(crops) >= MAX_IMAGES:
             raise ValueError('Background crop settings are full.')
         crops[image['id']] = crop
-        atomic_write(settings, (json.dumps({'schemaVersion': 1, 'crops': crops}) + '\n').encode())
+        atomic_write(settings, (json.dumps(document) + '\n').encode())
         if read_crops().get(image['id']) != crop:
             raise ValueError('Background crop could not be verified.')
     finally:
         os.close(lock)
     return {'path': str(path), 'crop': crop, 'id': image['id']}
+
+
+def managed_image(value, expected_id):
+    library, cache = directories()
+    path = local_path(value)
+    if path.parent != library or path.is_symlink():
+        raise ValueError('Only files inside the background library can be changed.')
+    image = entry(path, cache)
+    if image['id'] != expected_id:
+        raise ValueError('This image changed outside WebcamTuner. Refresh and try again.')
+    return path, image
+
+
+def lock_image(value, expected_id, locked):
+    if not isinstance(locked, bool):
+        raise ValueError('Invalid lock state.')
+    path, image = managed_image(value, expected_id)
+    settings = crop_file(); settings.parent.mkdir(parents=True, mode=0o700, exist_ok=True)
+    fd = os.open(str(settings) + '.lock', os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        document = read_settings()
+        if image['id'] not in document['locks'] and len(document['locks']) >= MAX_IMAGES:
+            raise ValueError('Background lock settings are full.')
+        document['locks'][image['id']] = locked
+        atomic_write(settings, (json.dumps(document) + '\n').encode())
+        if read_settings()['locks'].get(image['id'], False) != locked:
+            raise ValueError('Lock could not be verified.')
+    finally:
+        os.close(fd)
+    return listing()
+
+
+def label_image(value, expected_id, label):
+    if not isinstance(label, str) or len(label) > 80 or any(ord(c) < 32 for c in label):
+        raise ValueError('Use a label of up to 80 characters on one line.')
+    _, image = managed_image(value, expected_id)
+    label = label.strip()
+    settings = crop_file(); settings.parent.mkdir(parents=True, mode=0o700, exist_ok=True)
+    fd = os.open(str(settings) + '.lock', os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        document = read_settings()
+        if label:
+            if image['id'] not in document['labels'] and len(document['labels']) >= MAX_IMAGES:
+                raise ValueError('Background label settings are full.')
+            document['labels'][image['id']] = label
+        else:
+            document['labels'].pop(image['id'], None)
+        atomic_write(settings, (json.dumps(document) + '\n').encode())
+        if read_settings()['labels'].get(image['id'], '') != label:
+            raise ValueError('Background label could not be verified.')
+    finally:
+        os.close(fd)
+    return listing()
+
+
+def trash_image(value, expected_id, keep_paths):
+    path, image = managed_image(value, expected_id)
+    if not isinstance(keep_paths, list) or len(keep_paths) > 30 or any(not isinstance(p, str) for p in keep_paths):
+        raise ValueError('Invalid profile references.')
+    library, cache = directories()
+    settings = crop_file(); settings.parent.mkdir(parents=True, mode=0o700, exist_ok=True)
+    fd = os.open(str(settings) + '.lock', os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+    moved = False
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        document = read_settings()
+        if document['locks'].get(image['id'], False):
+            raise ValueError('Unlock this background before moving it to Trash.')
+        managed_image(value, expected_id)
+        result = subprocess.run(['gio', 'trash', '--', str(path)], capture_output=True, text=True, timeout=15)
+        if result.returncode or path.exists():
+            raise ValueError(result.stderr.strip()[:500] or 'The image could not be moved to Trash.')
+        moved = True
+        remaining = listing()
+        used = any(item['id'] == image['id'] for item in remaining['items'])
+        for reference in keep_paths:
+            if used: break
+            try: used = entry(local_path(reference), cache)['id'] == image['id']
+            except (OSError, ValueError, Image.DecompressionBombError, Image.DecompressionBombWarning): pass
+        if not used:
+            document['crops'].pop(image['id'], None)
+            document['locks'].pop(image['id'], None)
+            document['labels'].pop(image['id'], None)
+            atomic_write(settings, (json.dumps(document) + '\n').encode())
+            (cache / (image['id'] + '.jpg')).unlink(missing_ok=True)
+        (cache / ('file-' + hashlib.sha256(str(path).encode()).hexdigest() + '.json')).unlink(missing_ok=True)
+        return remaining
+    except (OSError, ValueError) as error:
+        if not moved: raise
+        # The move succeeded: do not tell the caller to restore dangling profile references.
+        try:
+            remaining = listing()
+        except (OSError, ValueError):
+            remaining = {'directory': str(library), 'items': [], 'unreadable': []}
+        remaining['cleanupWarning'] = str(error)[:300]
+        return remaining
+    finally:
+        os.close(fd)
 
 
 def add(values):
@@ -269,19 +385,31 @@ def add(values):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=['list', 'add', 'crop'])
+    parser.add_argument('action', choices=['list', 'add', 'crop', 'lock', 'trash', 'inspect', 'label'])
     parser.add_argument('--paths', default='[]')
     parser.add_argument('--path')
     parser.add_argument('--crop')
     parser.add_argument('--selected-path')
+    parser.add_argument('--id')
+    parser.add_argument('--label', default='')
+    parser.add_argument('--locked', choices=['true', 'false'])
+    parser.add_argument('--keep-paths', default='[]')
     args = parser.parse_args()
     try:
-        if args.action == 'crop':
+        if args.action == 'inspect':
+            _, result = managed_image(args.path, args.id)
+        elif args.action == 'lock':
+            result = lock_image(args.path, args.id, args.locked == 'true')
+        elif args.action == 'label':
+            result = label_image(args.path, args.id, args.label)
+        elif args.action == 'trash':
+            result = trash_image(args.path, args.id, json.loads(args.keep_paths))
+        elif args.action == 'crop':
             result = save_crop(args.path, json.loads(args.crop))
         else:
             result = listing(args.selected_path) if args.action == 'list' else add(json.loads(args.paths))
         print(json.dumps(result))
-    except (OSError, ValueError) as error:
+    except (OSError, ValueError, subprocess.TimeoutExpired) as error:
         print(json.dumps({'error': str(error)[:500]}), file=sys.stderr)
         raise SystemExit(1)
 

@@ -16,12 +16,23 @@ Rectangle {
     property int profileIndex: 0
     property bool dirty: false
     property bool busy: false
+    property bool savePending: false
+    property bool saveFailed: false
+    property bool automaticWritesPaused: false
+    property int editGeneration: 0
+    property int saveGeneration: -1
     property string message: qsTr("Loading saved profiles…")
     property bool previewOn: false
     property string section: "all"
     property var backgroundLibrary: ({directory: "", items: []})
     property bool libraryPending: false
     property string libraryMessage: ""
+    property var trashCandidate: null
+    readonly property bool backgroundLocked: {
+        var item = backgroundLibrary.items.find(i => i.path === imagePath)
+        if (item) return !!item.locked
+        return !!(backgroundLibrary.selected && backgroundLibrary.selected.path === imagePath && backgroundLibrary.selected.locked)
+    }
     property Component setupContent: null
     property bool testing: false
     property string snapshotDirectory: ""
@@ -29,6 +40,7 @@ Rectangle {
     property real zoom: 1
     property real centerX: 0.5
     property real centerY: 0.5
+    property var foreground: ({x: 0, y: 0})
     property string backgroundMode: "none"
     property string imagePath: ""
     property var backgroundCrop: ({zoom: 1, centerX: 0.5, centerY: 0.5})
@@ -81,7 +93,7 @@ Rectangle {
         else { resetScroll(); maybeAutostart(); if (section === "background") refreshBackgrounds() }
     }
     onBusyChanged: maybeAutostart()
-    onImageReadyChanged: maybeAutostart()
+    onImageReadyChanged: { maybeAutostart(); if (imageReady && dirty && !automaticWritesPaused) autosave.restart() }
     function maybeAutostart() {
         if (!autostartRequested || !autostartCamera || !panelOpen || !document || !cameraChoiceReady
             || busy || cameraPending || mirrorPending || autostartPending || sourceKind !== "local"
@@ -97,7 +109,30 @@ Rectangle {
     function resetScroll() {
         Qt.callLater(function() { if (editorScroll.contentItem) editorScroll.contentItem.contentY = 0 })
     }
-    function mark() { dirty = true; message = qsTr("Unsaved changes") }
+    function mark() {
+        editGeneration++
+        dirty = true
+        saveFailed = false
+        message = qsTr("Saving changes automatically…")
+        if (!automaticWritesPaused) autosave.restart()
+    }
+    function autosaveWhenReady() {
+        if (!dirty || automaticWritesPaused || saveFailed || !document) return
+        if (busy || savePending || cameraPending || mirrorPending || autostartPending || cropInFlight !== null) { autosave.restart(); return }
+        if (!profileName.trim() || (backgroundMode === "image" && !imageReady)) return
+        save()
+    }
+    function prepareUpdate() {
+        if (busy || savePending || cropInFlight !== null) return null
+        automaticWritesPaused = true
+        autosave.stop(); cropSave.stop()
+        return exportDraft()
+    }
+    function resumeAutomaticWrites() {
+        automaticWritesPaused = false
+        if (dirty) autosave.restart()
+        if (Object.keys(cropDrafts).length) cropSave.restart()
+    }
     function backgroundUrl(path) {
         var value = path.trim()
         try {
@@ -132,12 +167,36 @@ Rectangle {
         cropSave.restart()
     }
     function flushBackgroundCrop() {
+        if (automaticWritesPaused) return
         if (busy || cropInFlight !== null) { cropSave.restart(); return }
         var paths = Object.keys(cropDrafts)
         if (!paths.length) return
         var path = paths[0], value = cropDrafts[path]
         cropInFlight = {path: path, crop: value}
         request("background-crop", ["--path", path, "--crop", JSON.stringify(value)])
+    }
+    function cropBackground(image) {
+        chooseBackground(image.path)
+        Qt.callLater(function() {
+            var y = backgroundFraming.mapToItem(editorScroll.contentItem.contentItem, 0, 0).y
+            var flick = editorScroll.contentItem
+            if (y < flick.contentY || y + backgroundFraming.height > flick.contentY + flick.height)
+                flick.contentY = Math.max(0, Math.min(flick.contentHeight - flick.height, y))
+        })
+    }
+    function lockBackground(image) {
+        request("lock-background", ["--path", image.path, "--id", image.id, "--locked", String(!image.locked)])
+    }
+    function labelBackground(image, label) { request("label-background", ["--path", image.path, "--id", image.id, "--label", label]) }
+    function requestTrash(image) {
+        trashCandidate = image
+        var referenced = document && document.profiles.some(p => p.background.mode === "image" && p.background.imagePath === image.path)
+        if (image.path === imagePath || referenced) trashBackgroundDialog.open()
+        else trashBackground()
+    }
+    function trashBackground() {
+        if (!trashCandidate) return
+        request("trash-background", ["--path", trashCandidate.path, "--id", trashCandidate.id])
     }
     function refreshBackgrounds() {
         if (busy || libraryPending) { libraryRefresh.restart(); return }
@@ -153,9 +212,14 @@ Rectangle {
     }
     function previewSettings() {
         if (backgroundMode === "image" && !imageReady) return null
-        return { camera: savedCamera, mirror: mirror, crop: { zoom: zoom, centerX: centerX, centerY: centerY },
+        return { camera: savedCamera, mirror: mirror, foreground: foreground, crop: { zoom: zoom, centerX: centerX, centerY: centerY },
             background: { mode: backgroundMode, imagePath: imagePath, crop: backgroundCrop } }
     }
+    function placeForeground(x, y) {
+        foreground = {x: Math.max(-1, Math.min(1, x)), y: Math.max(-1, Math.min(1, y))}
+        mark()
+    }
+    function resetFrame() { foreground = {x:0, y:0}; frame(1, 0.5, 0.5) }
     function frame(z, x, y) {
         zoom = Math.max(1, Math.min(4, z))
         var edge = 0.5 / zoom
@@ -169,6 +233,7 @@ Rectangle {
         var p = document.profiles[index]
         if (savedCamera !== p.source.camera) previewOn = false
         zoom = p.crop.zoom; centerX = p.crop.centerX; centerY = p.crop.centerY
+        foreground = p.foreground || {x:0, y:0}
         profileName = p.name; backgroundMode = p.background.mode; imagePath = p.background.imagePath
         backgroundCrop = cropFor(imagePath, p.background.crop)
         savedCamera = p.source.camera; sourceHost = p.source.host; sourceKind = p.source.kind
@@ -193,6 +258,35 @@ Rectangle {
             if (Object.keys(cropDrafts).length) cropSave.restart()
             return
         }
+        if (action === "lock-background" || action === "trash-background" || action === "label-background") {
+            var selected = backgroundLibrary.selected
+            if (selected && selected.path === imagePath) {
+                var matching = result.items.find(i => i.id === selected.id)
+                if (matching) { selected.locked = matching.locked; result.selected = selected }
+            }
+            backgroundLibrary = result
+            if (action === "trash-background") {
+                var currentId = document.profiles[profileIndex].id
+                var recovered = JSON.parse(JSON.stringify(result.document))
+                recovered.profiles = recovered.profiles.concat(document.profiles.filter(p => !recovered.profiles.some(saved => saved.id === p.id)))
+                document = recovered
+                profileIndex = Math.max(0, document.profiles.findIndex(p => p.id === currentId))
+                if (result.trashError) {
+                    dirty = true
+                    libraryMessage = result.trashError
+                    root.message = result.trashError
+                    return
+                }
+                if (imagePath === result.trashedPath) {
+                    backgroundMode = "blur"; imagePath = ""; backgroundCrop = {zoom:1, centerX:0.5, centerY:0.5}
+                    if (!result.replacedProfiles.includes(document.profiles[profileIndex].id)) dirty = true
+                }
+                libraryMessage = qsTr("Image moved to your Trash")
+                if (result.cleanupWarning) libraryMessage += "\n" + result.cleanupWarning
+                trashCandidate = null
+            } else libraryMessage = action === "label-background" ? qsTr("Background label saved") : qsTr("Background lock saved and verified")
+            return
+        }
         if (action === "backgrounds" || action === "add-backgrounds") {
             libraryPending = false
             if (JSON.stringify(backgroundLibrary) !== JSON.stringify(result)) backgroundLibrary = result
@@ -201,7 +295,7 @@ Rectangle {
             if (action === "add-backgrounds") {
                 if (result.added.length) {
                     chooseBackground(result.added[0].path)
-                    libraryMessage = qsTr("Images copied and verified. Save profile to keep this selection.")
+                    libraryMessage = qsTr("Images copied and verified. Selection saves automatically.")
                 }
                 if (result.errors.length) libraryMessage += "\n" + result.errors.map(e => e.name + ": " + e.message).join("\n")
             }
@@ -235,9 +329,19 @@ Rectangle {
                 message = qsTr("Mirror setting saved")
                 return
             }
+            if (action === "save" && savePending) {
+                savePending = false
+                saveFailed = false
+                if (editGeneration !== saveGeneration) {
+                    dirty = true
+                    message = qsTr("Saving the latest changes…")
+                    if (!automaticWritesPaused) autosave.restart()
+                    return
+                }
+            }
             var index = result.profiles.findIndex(p => p.id === result.activeProfile)
             restore(Math.max(0, index))
-            message = action === "save" ? qsTr("Saved to disk and verified · revision %1").arg(result.revision) : result.revision === 0 ? qsTr("New profile. Save to keep your settings.") : qsTr("Profile restored from disk")
+            message = action === "save" ? qsTr("Saved to disk and verified · revision %1").arg(result.revision) : result.revision === 0 ? qsTr("New profile. Changes save automatically.") : qsTr("Profile restored from disk")
             if (action === "read") { refreshCameraInventory(); if (backgroundMode === "image") refreshBackgrounds() }
         } else if (action === "devices") {
             cameraAliases = result.aliases || []
@@ -255,6 +359,7 @@ Rectangle {
         var p = next.profiles[profileIndex]
         p.name = profileName
         p.crop = { zoom: zoom, centerX: centerX, centerY: centerY }
+        p.foreground = foreground
         p.background = { mode: backgroundMode, imagePath: imagePath, crop: backgroundCrop }
         p.source = { kind: sourceKind, host: sourceHost, camera: savedCamera }
         p.restoreOnStart = restoreOnStart
@@ -281,11 +386,15 @@ Rectangle {
         dirty = !!snapshot.dirty
         message = dirty ? qsTr("Unsaved adjustments recovered") : qsTr("Profile restored from disk")
         if (Object.keys(cropDrafts).length) cropSave.restart()
+        if (dirty && !automaticWritesPaused) autosave.restart()
         return true
     }
     function save() {
         if (!document || busy) return
         var next = draftDocument()
+        saveGeneration = editGeneration
+        savePending = true
+        saveFailed = false
         message = qsTr("Saving and verifying…")
         request("save", ["--document", JSON.stringify(next)])
     }
@@ -306,6 +415,7 @@ Rectangle {
         request("save", ["--document", JSON.stringify(next)])
     }
     function fail(message) {
+        if (savePending) { savePending = false; saveFailed = true }
         if (cropInFlight !== null) { cropInFlight = null; cropSaveFailed = true; cropMessage = qsTr("Could not save background framing: ") + message }
         if (libraryPending) { libraryPending = false; libraryMessage = message }
         mirrorPending = false
@@ -359,6 +469,7 @@ Rectangle {
         restore(next.profiles.length - 1); mark()
     }
     MediaDevices { id: devices; onVideoInputsChanged: cameraRefresh.restart() }
+    Timer { id: autosave; interval: 750; onTriggered: root.autosaveWhenReady() }
     Timer { id: cropSave; interval: 400; onTriggered: root.flushBackgroundCrop() }
     Timer { id: libraryRefresh; interval: 200; onTriggered: root.refreshBackgrounds() }
     Timer { id: cameraRefresh; interval: 200; onTriggered: root.refreshCameraInventory() }
@@ -390,7 +501,13 @@ Rectangle {
         spacing: 6
         RowLayout {
             id: profileActions
-            Button { objectName: "saveButton"; text: root.busy ? qsTr("Working…") : qsTr("Save profile"); highlighted: true; enabled: root.document !== null && root.dirty && !root.busy && root.profileName.trim() !== "" && (root.backgroundMode !== "image" || root.imageReady); onClicked: root.save() }
+            LabelText {
+                objectName: "profileSaveState"
+                text: !root.document ? qsTr("Loading…") : root.saveFailed ? qsTr("Could not save") : root.savePending ? qsTr("Saving…") : root.dirty ? (root.profileName.trim() ? qsTr("Waiting to save…") : qsTr("Name this profile")) : qsTr("Saved")
+                color: root.saveFailed ? "#f1b58a" : root.accent
+                Layout.preferredWidth: Math.min(160, implicitWidth)
+            }
+            Button { visible: root.saveFailed; text: qsTr("Retry"); enabled: !root.busy; onClicked: root.save() }
             Button { text: qsTr("Reload saved"); enabled: !root.busy; onClicked: root.dirty ? discardDialog.open() : root.request("read", []) }
             Item { Layout.fillWidth: true }
             Button { text: qsTr("Remote cameras"); enabled: !root.busy; onClicked: root.request("remote", []) }
@@ -414,7 +531,11 @@ Rectangle {
         ScrollBar.vertical: VisibleScrollBar {
             ink: root.accent
             objectName: "editorScrollbar"
+            parent: editorScroll
+            x: editorScroll.width - width
+            y: 0
             width: 12
+            height: editorScroll.height
             active: true
             policy: editorScroll.contentHeight > editorScroll.availableHeight ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
         }
@@ -423,7 +544,7 @@ Rectangle {
             width: editorScroll.availableWidth
             height: implicitHeight
             spacing: 14
-            LabelText { id: pageIntro; text: qsTr("Frame your camera. Choose a background. Save your look."); color: "#a9b4c1"; Layout.fillWidth: true }
+            LabelText { id: pageIntro; text: qsTr("Frame your camera. Choose a background. Your look saves automatically."); color: "#a9b4c1"; Layout.fillWidth: true }
             RowLayout {
                 id: profileRow
                 Layout.fillWidth: true
@@ -482,6 +603,7 @@ Rectangle {
                         - captureInfo.implicitHeight - 98))
                     Rectangle {
                     id: stage
+                    objectName: "cameraCompositionStage"
                     anchors.centerIn: parent
                     width: Math.min(parent.width, parent.height * 16 / 9)
                     height: width * 9 / 16
@@ -498,6 +620,9 @@ Rectangle {
                         sourceSize.height: 720
                         visible: root.backgroundMode === "image" && !root.previewOn
                     }
+                    Item {
+                        anchors.fill: parent
+                        transform: Translate { x: root.foreground.x * stage.width; y: root.foreground.y * stage.height }
                     Item {
                         id: source
                         visible: !root.previewOn || root.testing
@@ -521,11 +646,18 @@ Rectangle {
                             Rectangle { x: parent.width * 0.30; y: parent.height * 0.53; width: parent.width * 0.40; height: parent.height * 0.65; radius: width * 0.3; color: "#88a5a3" }
                         }
                     }
+                    }
                     PreviewFrame {
                         objectName: "processedFrame"
                         anchors.fill: parent
                         visible: root.previewOn
                         source: processor.item ? processor.item.frameUrl : ""
+                        onFrameDecoded: fpsBadge.frameReady()
+                    }
+                    FpsIndicator {
+                        id: fpsBadge
+                        anchors.right: parent.right; anchors.top: parent.top; anchors.margins: 10
+                        active: root.previewOn
                     }
                     LabelText {
                         anchors.left: parent.left; anchors.top: parent.top; anchors.margins: 12
@@ -536,16 +668,23 @@ Rectangle {
                     MouseArea {
                         anchors.fill: parent; preventStealing: true
                         property real startX; property real startY; property real startCX; property real startCY
-                        cursorShape: root.zoom > 1 ? (pressed ? Qt.ClosedHandCursor : Qt.OpenHandCursor) : Qt.ArrowCursor
-                        onPressed: function(mouse) { startX = mouse.x; startY = mouse.y; startCX = root.centerX; startCY = root.centerY }
-                        onPositionChanged: function(mouse) { if (pressed && root.zoom > 1) root.frame(root.zoom, startCX + (root.mirror ? 1 : -1) * (mouse.x - startX) / source.width, startCY - (mouse.y - startY) / source.height) }
-                        onWheel: function(wheel) { root.frame(root.zoom + (wheel.angleDelta.y > 0 ? 0.1 : -0.1), root.centerX, root.centerY); wheel.accepted = true }
+                        cursorShape: pressed ? Qt.ClosedHandCursor : Qt.OpenHandCursor
+                        onPressed: function(mouse) { startX = mouse.x; startY = mouse.y; startCX = root.foreground.x; startCY = root.foreground.y }
+                        onPositionChanged: function(mouse) { if (pressed) root.placeForeground(startCX + (mouse.x - startX) / stage.width, startCY + (mouse.y - startY) / stage.height) }
+                        onWheel: function(wheel) {
+                            if (!(wheel.modifiers & Qt.ControlModifier)) {
+                                var flick = editorScroll.contentItem
+                                var amount = wheel.pixelDelta.y ? -wheel.pixelDelta.y : -wheel.angleDelta.y / 120 * 64
+                                flick.contentY = Math.max(0, Math.min(flick.contentHeight - flick.height, flick.contentY + amount))
+                                wheel.accepted = true; return
+                            }
+                            root.frame(root.zoom + (wheel.angleDelta.y > 0 ? 0.1 : -0.1), root.centerX, root.centerY); wheel.accepted = true }
                     }
                 }
                 }
                 LabelText {
                     id: framingGuide
-                    text: qsTr("Zoom in, then drag the image above to adjust framing.")
+                    text: qsTr("Drag the image to position yourself anywhere. Use Camera zoom, or Ctrl+scroll, to change framing.")
                     color: "#a9b4c1"
                     Layout.fillWidth: true
                 }
@@ -553,7 +692,7 @@ Rectangle {
                     id: zoomControls
                     LabelText { text: qsTr("Camera zoom"); Layout.preferredWidth: 95 }
                     Slider { objectName: "zoomSlider"; Layout.fillWidth: true; from: 1; to: 4; value: root.zoom; stepSize: 0.05; onMoved: root.frame(value, root.centerX, root.centerY) }
-                    Button { text: qsTr("Reset frame"); onClicked: root.frame(1, 0.5, 0.5) }
+                    Button { text: qsTr("Reset frame"); onClicked: root.resetFrame() }
                 }
                 CheckBox {
                     id: mirrorControl
@@ -621,25 +760,32 @@ Rectangle {
                 GridLayout {
                     id: backgroundsPane
                     Layout.fillWidth: true
-                    columns: width >= 580 ? 2 : 1
+                    columns: 1
                     columnSpacing: 16
                     rowSpacing: 12
                     BackgroundLibrary {
                         Layout.fillWidth: true
                         Layout.alignment: Qt.AlignTop
-                        Layout.preferredWidth: backgroundsPane.columns === 2 ? 220 : backgroundsPane.width
-                        Layout.maximumWidth: backgroundsPane.columns === 2 ? 240 : Infinity
-                        compact: backgroundsPane.columns === 2
-                        availableGridHeight: Math.max(120, Math.min(280, root.height - 520))
+                        Layout.preferredWidth: backgroundsPane.width
+                        Layout.maximumWidth: Infinity
+                        compact: false
+                        availableGridHeight: Math.max(120, Math.min(240, root.height * 0.28))
                         library: root.backgroundLibrary
                         watching: root.panelOpen && root.section === "background"
                         selectedPath: root.imagePath
                         busy: root.busy || root.libraryPending
+                        actionsReady: root.cropInFlight === null && Object.keys(root.cropDrafts).length === 0
                         onAddRequested: imageDialog.open()
                         onRefreshRequested: root.refreshBackgrounds()
                         onSelected: function(path) { root.chooseBackground(path) }
+                        onCropRequested: function(image) { root.cropBackground(image) }
+                        onLockRequested: function(image) { root.lockBackground(image) }
+                        onTrashRequested: function(image) { root.requestTrash(image) }
+                        onLabelRequested: function(image, label) { root.labelBackground(image, label) }
                     }
                     BackgroundFraming {
+                        id: backgroundFraming
+                        locked: root.backgroundLocked
                         Layout.fillWidth: true
                         Layout.alignment: Qt.AlignTop
                         Layout.minimumWidth: backgroundsPane.columns === 2 ? 280 : 0
@@ -680,10 +826,11 @@ Rectangle {
                 onClicked: root.toggleAutostart()
             }
             Loader {
+                objectName: "setupLoader"
                 Layout.fillWidth: true
-                Layout.preferredHeight: 560
+                Layout.preferredHeight: item ? item.implicitHeight : 0
                 visible: root.section === "setup"
-                active: root.setupContent !== null
+                active: root.section === "setup" && root.setupContent !== null
                 sourceComponent: root.setupContent
             }
             Rectangle { Layout.fillWidth: true; height: 1; color: "#39414b" }
@@ -722,6 +869,16 @@ Rectangle {
             }
             Rectangle { Layout.fillWidth: true; height: 1; color: "#39414b" }
         }
+    }
+    Dialog {
+        id: trashBackgroundDialog
+        objectName: "trashBackgroundDialog"
+        title: qsTr("Move this background to Trash?")
+        anchors.centerIn: parent
+        modal: true
+        standardButtons: Dialog.Ok | Dialog.Cancel
+        Label { text: qsTr("Profiles using this image will switch to Blur. The image can be restored from your user Trash."); textFormat: Text.PlainText; wrapMode: Text.WordWrap; width: Math.min(360, root.width - 80) }
+        onAccepted: root.trashBackground()
     }
     Dialog {
         id: discardDialog

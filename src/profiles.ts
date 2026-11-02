@@ -19,6 +19,7 @@ export const profileSchema = z.object({
   background: z.object({ mode: z.enum(['none', 'blur', 'image']), imagePath: z.string().max(4096),
     crop: z.object({ zoom: z.number().finite().min(1).max(4), centerX: unit, centerY: unit }).strict().optional(),
   }).strict(),
+  foreground: z.object({ x: z.number().finite().min(-1).max(1), y: z.number().finite().min(-1).max(1) }).strict().optional(),
   mirror: z.boolean().default(true),
   autostartCamera: z.boolean().default(true),
   restoreOnStart: z.boolean(),

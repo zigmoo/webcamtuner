@@ -31,6 +31,16 @@ class SnapshotTests(unittest.TestCase):
             self.assertLess(np.abs(np.array(image.getpixel((480,540)))-[20,70,200]).max(),4)
             self.assertLess(np.abs(np.array(image.getpixel((1440,540)))-[200,70,20]).max(),4)
         self.assertFalse(list(path.parent.glob('*.partial')))
+    def test_snapshot_keeps_free_foreground_placement(self):
+        frame=np.zeros((720,1280,3),dtype=np.uint8);frame[300:420,600:680]=(0,0,255)
+        matte=np.zeros((720,1280,1),dtype=np.float32);matte[300:420,600:680]=1
+        background=np.full((720,1280,3),(0,255,0),dtype=np.uint8)
+        settings={'crop':{'zoom':1,'centerX':.5,'centerY':.5},'mirror':True,'foreground':{'x':.4,'y':0},'background':{'mode':'image'}}
+        saved=preview.save_processed_snapshot(frame,matte,settings,background)
+        with Image.open(saved['path']) as image:
+            self.assertLess(np.abs(np.array(image.getpixel((1160,360)))-[255,0,0]).max(),4)
+            self.assertLess(np.abs(np.array(image.getpixel((640,360)))-[0,255,0]).max(),4)
+
     def test_original_snapshot_and_unique_names(self):
         frame=np.full((120,200,3),80,dtype=np.uint8)
         settings={'crop':{'zoom':1,'centerX':.5,'centerY':.5},'mirror':False,'background':{'mode':'none'}}

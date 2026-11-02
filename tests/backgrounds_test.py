@@ -33,6 +33,19 @@ class BackgroundTests(unittest.TestCase):
         self.assertAlmostEqual(float(aligned[180,320,0]),1)
         self.assertGreater(float(aligned[2:-2,2:-2].mean()),0.999)
 
+    def test_foreground_can_reveal_source_outside_old_crop_and_move_at_one_x(self):
+        source=np.zeros((200,400,3),dtype=np.uint8);source[80:120,50:80]=(20,70,200)
+        matte=np.zeros((200,400,1),dtype=np.float32);matte[80:120,50:80]=1
+        crop={'zoom':2,'centerX':0.5,'centerY':0.5}
+        image,alpha=preview.placed_foreground(source,matte,crop,False,{'x':0.4,'y':0},200,100)
+        np.testing.assert_array_equal(image[50,40],(20,70,200))
+        self.assertEqual(float(alpha[50,40,0]),1)
+        self.assertEqual(float(alpha[0,0,0]),0)
+        source[:]=100;matte[:]=0;matte[80:120,180:220]=1
+        image,alpha=preview.placed_foreground(source,matte,{'zoom':1,'centerX':0.5,'centerY':0.5},True,{'x':0.4,'y':0},400,200)
+        self.assertEqual(float(alpha[100,360,0]),1)
+        self.assertEqual(float(alpha[100,200,0]),0)
+
     def test_background_crop_selects_area_without_moving_foreground(self):
         image = np.zeros((200,400,3),dtype=np.uint8)
         image[:,:200] = (0,0,255)

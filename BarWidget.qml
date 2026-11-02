@@ -39,6 +39,8 @@ BarWidget {
         function backgrounds(): void { panel.openBackgrounds() }
         function toggle(): void { root.toggle() }
         function minimize(): void { if (root.opened && !panel.collapsed) panel.toggleCollapse() }
+        function prepareUpdate(): string { return JSON.stringify(panel.editor.prepareUpdate()) }
+        function resumeWrites(): void { panel.editor.resumeAutomaticWrites() }
         function draft(): string { return JSON.stringify(panel.editor.exportDraft()) }
         function restoreDraft(snapshot: string): bool {
             if (snapshot.length > 131072) return false
@@ -49,7 +51,7 @@ BarWidget {
             return JSON.stringify({ version: BuildInfo.version, opened: root.opened, collapsed: panel.collapsed, width: panel.width, height: panel.height,
                 busy: panel.editor.busy, dirty: panel.editor.dirty, message: panel.editor.message,
                 mirror: panel.editor.mirror, autostartCamera: panel.editor.autostartCamera, previewOn: panel.editor.previewOn,
-                draftRecovery: true, revision: panel.editor.document ? panel.editor.document.revision : -1, broadcasting: false })
+                draftRecovery: true, autosave: true, saving: panel.editor.savePending, saveFailed: panel.editor.saveFailed, revision: panel.editor.document ? panel.editor.document.revision : -1, broadcasting: false })
         }
     }
     Tuner.TunerWindow {

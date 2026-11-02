@@ -3,10 +3,10 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import Quickshell.Io
 
-ScrollView {
+Item {
     id: root
-    clip: true
-    contentWidth: availableWidth
+    objectName: "setupPanel"
+    implicitHeight: setupContent.implicitHeight
     property var state: ({state: "unknown", published: false})
     property string feedback: qsTr("Checking your user session…")
     property var runtimeState: ({gpuEnabled: false, gpu: ""})
@@ -75,7 +75,9 @@ ScrollView {
         }
     }
     ColumnLayout {
-        width: root.availableWidth
+        id: setupContent
+        width: root.width
+        height: implicitHeight
         spacing: 16
         component Plain: Text { color: "#e9ecef"; textFormat: Text.PlainText; wrapMode: Text.WordWrap; Layout.fillWidth: true; font.pixelSize: 14 }
         Plain { text: qsTr("Preview performance"); font.pixelSize: 22; font.bold: true }

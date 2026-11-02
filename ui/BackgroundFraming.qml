@@ -4,12 +4,14 @@ import QtQuick.Layouts
 
 ColumnLayout {
     id: root
+    property bool locked: false
     property real maximumPreviewHeight: 240
     property url imageSource
     property var crop: ({zoom: 1, centerX: 0.5, centerY: 0.5})
     signal edited(var value)
     signal pageScrollRequested(real amount)
     function adjust(zoom, x, y) {
+        if (locked) return
         zoom = Math.max(1, Math.min(4, zoom))
         var iw = backdrop.implicitWidth, ih = backdrop.implicitHeight
         if (iw <= 0 || ih <= 0) return
@@ -18,9 +20,10 @@ ColumnLayout {
         edited({zoom: zoom, centerX: Math.max(ex, Math.min(1 - ex, x)), centerY: Math.max(ey, Math.min(1 - ey, y))})
     }
     Label { text: qsTr("Background framing"); textFormat: Text.PlainText; color: "#e9ecef"; font.bold: true }
-    Label { text: qsTr("Drag the image to choose its framing. Use Background zoom, or Ctrl+scroll to zoom. Each image remembers its framing."); textFormat: Text.PlainText; wrapMode: Text.WordWrap; color: "#a9b4c1"; Layout.fillWidth: true }
+    Label { text: root.locked ? qsTr("Framing is locked. Unlock this image in the gallery to edit it.") : qsTr("Drag the image to choose its framing. Use Background zoom, or Ctrl+scroll to zoom. Each image remembers its framing."); textFormat: Text.PlainText; wrapMode: Text.WordWrap; color: "#a9b4c1"; Layout.fillWidth: true }
     RowLayout {
         Layout.fillWidth: true
+        enabled: !root.locked
         Label { text: qsTr("Background zoom"); textFormat: Text.PlainText; color: "#e9ecef" }
         Slider { objectName: "backgroundZoom"; Layout.fillWidth: true; from: 1; to: 4; value: root.crop.zoom; onMoved: root.adjust(value, root.crop.centerX, root.crop.centerY) }
         Button { text: qsTr("Reset"); onClicked: root.adjust(1, 0.5, 0.5) }
@@ -58,7 +61,7 @@ ColumnLayout {
             property real startX; property real startY; property real centerX; property real centerY
             onPressed: function(mouse) { startX = mouse.x; startY = mouse.y; centerX = root.crop.centerX; centerY = root.crop.centerY }
             onPositionChanged: function(mouse) {
-                if (pressed) root.adjust(root.crop.zoom, centerX - (mouse.x - startX) / backdrop.width, centerY - (mouse.y - startY) / backdrop.height)
+                if (pressed && !root.locked) root.adjust(root.crop.zoom, centerX - (mouse.x - startX) / backdrop.width, centerY - (mouse.y - startY) / backdrop.height)
             }
             onWheel: function(wheel) {
                 if (!(wheel.modifiers & Qt.ControlModifier)) {

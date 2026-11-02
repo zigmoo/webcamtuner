@@ -17,7 +17,7 @@ view.show();failures=[];finished=False
 
 def check():
  try:
-  for name in ('cameraChoice','zoomSlider','mirrorToggle','saveButton'):
+  for name in ('cameraChoice','zoomSlider','mirrorToggle','profileSaveState'):
    item=editor.findChild(QObject,name);assert item,name
    point=item.mapToItem(editor,QPointF(0,0))
    assert point.y()>=0 and point.y()+item.height()<=editor.height(),(name,point.y(),item.height(),editor.height())

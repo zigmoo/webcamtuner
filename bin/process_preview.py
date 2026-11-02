@@ -75,6 +75,9 @@ def validate_settings(settings: dict) -> dict:
         raise ValueError("Invalid crop values")
     if not 1 <= zoom <= 4 or not 0.5 / zoom <= x <= 1 - 0.5 / zoom or not 0.5 / zoom <= y <= 1 - 0.5 / zoom:
         raise ValueError("Crop must stay inside the source frame")
+    foreground = settings.get("foreground", {"x": 0, "y": 0})
+    if not isinstance(foreground, dict) or any(isinstance(foreground.get(k), bool) or not isinstance(foreground.get(k), (int, float)) or not math.isfinite(foreground[k]) or not -1 <= foreground[k] <= 1 for k in ('x', 'y')):
+        raise ValueError("Invalid foreground position")
     background = settings.get("background", {})
     if background.get("mode") not in ("none", "blur", "image"):
         raise ValueError("Unknown background mode")
@@ -213,11 +216,35 @@ def align_matte(mask, source_width, source_height, crop, width, height):
                           borderMode=cv2.BORDER_REPLICATE)[..., None]
 
 
-def composite(frame: np.ndarray, mask: np.ndarray, mode: str, background: np.ndarray | None, background_crop: dict | None = None) -> np.ndarray:
+def placed_foreground(source, matte, crop, mirror, placement, width, height):
+    """Sample the full source, so moving a crop can reveal previously clipped pixels."""
+    sh, sw = source.shape[:2]
+    x, y, cw, ch = crop_bounds(sw, sh, crop)
+    ax, ay = cw / width, ch / height
+    tx = x + ax / 2 - 0.5 - placement.get('x', 0) * cw
+    if mirror:
+        ax = -ax
+        tx = x + (width - 0.5) * cw / width - 0.5 + placement.get('x', 0) * cw
+    ty = y + ay / 2 - 0.5 - placement.get('y', 0) * ch
+    matrix = np.array([[ax, 0, tx], [0, ay, ty]], dtype=np.float32)
+    image = cv2.warpAffine(source, matrix, (width, height), flags=cv2.INTER_LINEAR | cv2.WARP_INVERSE_MAP,
+                           borderMode=cv2.BORDER_CONSTANT, borderValue=0)
+    alpha = None
+    if matte is not None:
+        sx, sy = matte.shape[1] / sw, matte.shape[0] / sh
+        mm = np.array([[ax * sx, 0, (tx + 0.5) * sx - 0.5],
+                       [0, ay * sy, (ty + 0.5) * sy - 0.5]], dtype=np.float32)
+        alpha = cv2.warpAffine(matte, mm, (width, height), flags=cv2.INTER_LINEAR | cv2.WARP_INVERSE_MAP,
+                              borderMode=cv2.BORDER_CONSTANT, borderValue=0)[..., None]
+    return image, alpha
+
+
+def composite(frame: np.ndarray, mask: np.ndarray, mode: str, background: np.ndarray | None, background_crop: dict | None = None, blur_source: np.ndarray | None = None) -> np.ndarray:
     if mode == "none":
         return frame
     if mode == "blur":
-        small = cv2.resize(frame, (max(1, frame.shape[1] // 4), max(1, frame.shape[0] // 4)))
+        base = frame if blur_source is None else blur_source
+        small = cv2.resize(base, (max(1, base.shape[1] // 4), max(1, base.shape[0] // 4)))
         backdrop = cv2.resize(cv2.GaussianBlur(small, (0, 0), 4.5), (frame.shape[1], frame.shape[0]))
     else:
         backdrop = fit_background(background, frame.shape[1], frame.shape[0], background_crop)
@@ -249,8 +276,12 @@ def save_processed_snapshot(frame, matte, settings, background):
             raise ValueError('The processed image is not ready for a snapshot.')
         alpha = align_matte(matte, w, h, settings['crop'], cw, ch)
     full, alpha = orient_camera(full, alpha, settings.get('mirror', True))
+    base = full
+    placement = settings.get('foreground', {'x':0, 'y':0})
+    if placement.get('x', 0) or placement.get('y', 0):
+        full, alpha = placed_foreground(frame, matte, settings['crop'], settings.get('mirror', True), placement, cw, ch)
     if mode != 'none':
-        full = composite(full, alpha, mode, background, settings['background'].get('crop'))
+        full = composite(full, alpha, mode, background, settings['background'].get('crop'), base)
     okay, encoded = cv2.imencode('.jpg', full, [cv2.IMWRITE_JPEG_QUALITY, 96])
     if not okay:
         raise ValueError('Snapshot could not be encoded.')
@@ -374,10 +405,17 @@ def run(initial: dict, frame_limit: int = 0) -> None:
                 frame = crop_frame(frame, current["crop"])
                 alpha = align_matte(alpha, source_width, source_height, current["crop"], frame.shape[1], frame.shape[0])
                 frame, alpha = orient_camera(frame, alpha, current.get("mirror", True))
-                frame = composite(frame, alpha, mode, background, current["background"].get("crop"))
+                base = frame
+                placement = current.get('foreground', {'x':0, 'y':0})
+                if placement.get('x', 0) or placement.get('y', 0):
+                    frame, alpha = placed_foreground(full_frame, matte, current['crop'], current.get('mirror', True), placement, frame.shape[1], frame.shape[0])
+                frame = composite(frame, alpha, mode, background, current["background"].get("crop"), base)
             else:
                 frame = crop_frame(frame, current["crop"])
                 frame, _ = orient_camera(frame, None, current.get("mirror", True))
+                placement = current.get('foreground', {'x':0, 'y':0})
+                if placement.get('x', 0) or placement.get('y', 0):
+                    frame, _ = placed_foreground(full_frame, None, current['crop'], current.get('mirror', True), placement, frame.shape[1], frame.shape[0])
             with guard:
                 snapshot = snapshots.pop() if snapshots else None
             if snapshot is not None:

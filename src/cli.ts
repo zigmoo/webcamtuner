@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { readStore, saveStore, storePath, cropPixels } from './profiles.js'
 import { cameraAliases } from './cameras.js'
 
-const cli = Cli.create('webcamtuner', { version: '0.8.2', description: 'WebcamTuner preview: persist camera framing and background profiles. Preview autostart is a saved profile choice.' })
+const cli = Cli.create('webcamtuner', { version: '0.8.3', description: 'WebcamTuner preview: persist camera framing and background profiles. Preview autostart is a saved profile choice.' })
 cli.command('read', { description: 'Read profiles and their revision without starting capture', run: () => readStore() })
 cli.command('devices', { description: 'Read stable local webcam identifiers without opening a camera', run: () => ({ aliases: cameraAliases() }) })
 cli.command('save', {
@@ -41,6 +41,44 @@ cli.command('background-crop', {
   description: 'Save and verify the framing remembered for a managed background image',
   options: z.object({ path: z.string().max(4096), crop: z.string().max(256) }),
   run: c => backgroundLibrary('crop', c.options.path, c.options.crop),
+})
+function backgroundAction(action: string, path: string, id: string, extra: string[] = []) {
+  return JSON.parse(execFileSync('python3', [fileURLToPath(new URL('../bin/background-library.py', import.meta.url)), action, '--path', path, '--id', id, ...extra], { encoding: 'utf8', timeout: 30000, maxBuffer: 1048576 }))
+}
+cli.command('lock-background', {
+  description: 'Persist and verify a background lock',
+  options: z.object({ path: z.string().max(4096), id: z.string().regex(/^[a-f0-9]{64}$/), locked: z.enum(['true', 'false']) }),
+  run: c => backgroundAction('lock', c.options.path, c.options.id, ['--locked', String(c.options.locked)]),
+})
+cli.command('label-background', {
+  description: 'Save an optional display label without renaming an image',
+  options: z.object({ path: z.string().max(4096), id: z.string().regex(/^[a-f0-9]{64}$/), label: z.string().max(80) }),
+  run: c => backgroundAction('label', c.options.path, c.options.id, ['--label', c.options.label]),
+})
+cli.command('trash-background', {
+  description: 'Move a background to OS Trash; update affected profiles and library metadata',
+  options: z.object({ path: z.string().max(4096), id: z.string().regex(/^[a-f0-9]{64}$/) }),
+  run: c => {
+    const image = backgroundAction('inspect', c.options.path, c.options.id)
+    if (image.locked) throw new Error('Unlock this background before moving it to Trash.')
+    const before = readStore(), next = JSON.parse(JSON.stringify(before))
+    const affected: string[] = []
+    for (const profile of next.profiles) if (profile.background.mode === 'image' && profile.background.imagePath === c.options.path) {
+      profile.background = { mode: 'blur', imagePath: '' }
+      affected.push(profile.id)
+    }
+    const updated = affected.length ? saveStore(next) : before
+    try {
+      const keep = updated.profiles.filter(p => p.background.mode === 'image').map(p => p.background.imagePath)
+      const result = backgroundAction('trash', c.options.path, c.options.id, ['--keep-paths', JSON.stringify(keep)])
+      return { ...result, document: updated, trashedPath: c.options.path, replacedProfiles: affected }
+    } catch (error) {
+      if (affected.length) {
+        try { saveStore({ ...before, revision: updated.revision }) } catch {}
+      }
+      return { ...backgroundLibrary('list'), document: readStore(), trashError: String(error), trashedPath: c.options.path, replacedProfiles: [] }
+    }
+  },
 })
 cli.command('remote', {
   description: 'Inspect hosts or devices through the existing webcam_tool; never starts a viewer or remote capture',
