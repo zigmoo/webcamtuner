@@ -26,7 +26,8 @@ BarWidget {
     BarIconButton {
         id: button
         anchors.fill: parent; bar: root.bar
-        text: "󰖠"; tooltipText: "WebcamTuner · framing profiles"
+        iconComponent: Component { Tuner.WebcamIcon { ink: button.active && button.useActiveColor ? button.activeColor : button.foreground } }
+        tooltipText: "WebcamTuner · framing and backgrounds"
         onPressed: root.toggle()
     }
     IpcHandler {

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import importlib.util
 from collections import deque
 import base64
 import json
@@ -21,6 +22,12 @@ import cv2
 import numpy as np
 import onnxruntime as ort
 from PIL import Image, ImageOps
+
+# Runtime imports must not write into the watched plugin directory.
+sys.dont_write_bytecode = True
+_snapshot_spec = importlib.util.spec_from_file_location("webcamtuner_snapshots", Path(__file__).with_name("snapshot_files.py"))
+snapshot_files = importlib.util.module_from_spec(_snapshot_spec)
+_snapshot_spec.loader.exec_module(snapshot_files)
 
 MODEL = Path(__file__).resolve().parent.parent / "models" / "rvm" / "rvm_mobilenetv3_fp32.onnx"
 OUTPUT_LOCK = threading.Lock()
@@ -231,10 +238,32 @@ def emit(value: dict) -> None:
         print(json.dumps(value, separators=(",", ":")), flush=True)
 
 
+def save_processed_snapshot(frame, matte, settings, background):
+    h, w = frame.shape[:2]
+    x, y, cw, ch = crop_bounds(w, h, settings['crop'])
+    full = frame[y:y + ch, x:x + cw]
+    mode = settings['background']['mode']
+    alpha = None
+    if mode != 'none':
+        if matte is None:
+            raise ValueError('The processed image is not ready for a snapshot.')
+        alpha = align_matte(matte, w, h, settings['crop'], cw, ch)
+    full, alpha = orient_camera(full, alpha, settings.get('mirror', True))
+    if mode != 'none':
+        full = composite(full, alpha, mode, background, settings['background'].get('crop'))
+    okay, encoded = cv2.imencode('.jpg', full, [cv2.IMWRITE_JPEG_QUALITY, 96])
+    if not okay:
+        raise ValueError('Snapshot could not be encoded.')
+    path = snapshot_files.save(encoded.tobytes())
+    return {'path': str(path), 'width': cw, 'height': ch}
+
+
 def run(initial: dict, frame_limit: int = 0) -> None:
     cv2.setNumThreads(2)
     current = validate_settings(initial)
     updates: list[dict] = []
+    snapshots: list[dict] = []
+    snapshot_thread = None
     guard = threading.Lock()
     alive = threading.Event()
     alive.set()
@@ -246,7 +275,17 @@ def run(initial: dict, frame_limit: int = 0) -> None:
             try:
                 if len(line) > 16384:
                     raise ValueError("Preview settings exceed the size limit")
-                parsed = validate_settings(json.loads(line))
+                value = json.loads(line)
+                if value.get('operation') == 'snapshot':
+                    if not isinstance(value.get('requestId'), str) or not re.fullmatch(r'[a-zA-Z0-9-]{1,64}', value['requestId']):
+                        raise ValueError('Invalid snapshot request')
+                    with guard:
+                        if snapshots:
+                            emit({'snapshotError': 'A snapshot is already pending', 'requestId': value['requestId']})
+                        else:
+                            snapshots.append(value)
+                    continue
+                parsed = validate_settings(value)
                 with guard:
                     updates[:] = [parsed]
             except (ValueError, TypeError, AttributeError) as error:
@@ -320,6 +359,8 @@ def run(initial: dict, frame_limit: int = 0) -> None:
             dropped += max(0, sequence - last_sequence - 1)
             last_sequence = sequence
             captured = time.monotonic()
+            full_frame = frame
+            matte = None
             source_height, source_width = frame.shape[:2]
             _, _, retained_width, retained_height = crop_bounds(source_width, source_height, current["crop"])
             mode = current["background"]["mode"]
@@ -328,6 +369,7 @@ def run(initial: dict, frame_limit: int = 0) -> None:
                 # Detect the person in the full camera view. Tight user crops can otherwise
                 # remove the shoulders/context the model needs to classify a head correctly.
                 alpha = segmenter.mask(frame, full_resolution=False)
+                matte = alpha
                 matte_ms = (time.monotonic() - captured) * 1000
                 frame = crop_frame(frame, current["crop"])
                 alpha = align_matte(alpha, source_width, source_height, current["crop"], frame.shape[1], frame.shape[0])
@@ -336,6 +378,23 @@ def run(initial: dict, frame_limit: int = 0) -> None:
             else:
                 frame = crop_frame(frame, current["crop"])
                 frame, _ = orient_camera(frame, None, current.get("mirror", True))
+            with guard:
+                snapshot = snapshots.pop() if snapshots else None
+            if snapshot is not None:
+                if snapshot_thread is not None and snapshot_thread.is_alive():
+                    emit({'snapshotError': 'A snapshot is still being saved', 'requestId': snapshot['requestId']})
+                elif snapshot.get('expectedRevision') != current.get('configurationRevision', 0):
+                    emit({'snapshotError': 'Settings changed before the snapshot; try again.', 'requestId': snapshot['requestId']})
+                else:
+                    def write_snapshot(image, alpha, settings, backdrop, request_id):
+                        try:
+                            result = save_processed_snapshot(image, alpha, settings, backdrop)
+                            emit({'snapshot': result, 'requestId': request_id})
+                        except (OSError, ValueError, cv2.error) as error:
+                            emit({'snapshotError': str(error), 'requestId': request_id})
+                    snapshot_thread = threading.Thread(target=write_snapshot,
+                        args=(full_frame, matte, current, background, snapshot['requestId']))
+                    snapshot_thread.start()
             okay, encoded = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 82])
             if not okay:
                 raise RuntimeError("Could not encode the processed preview")
@@ -344,6 +403,7 @@ def run(initial: dict, frame_limit: int = 0) -> None:
             actual_fps = (len(delivered) - 1) / (delivered[-1] - delivered[0]) if len(delivered) > 1 else 0
             emit({"frame": base64.b64encode(encoded).decode("ascii"), "effect": mode, "width": frame.shape[1], "height": frame.shape[0],
                   "captureWidth": source_width, "captureHeight": source_height, "captureFps": source_fps, "previewFps": actual_fps,
+                  "configurationRevision": current.get("configurationRevision", 0),
                   "sequence": sequence, "dropped": dropped, "processingMs": (now - began) * 1000,
                   "provider": segmenter.provider if mode != "none" else "No matting",
                   "matteMs": matte_ms, "captureWaitMs": (captured - began) * 1000,
@@ -358,6 +418,8 @@ def run(initial: dict, frame_limit: int = 0) -> None:
             reader.join(timeout=2)
         if reader is None or not reader.is_alive():
             capture.release()
+        if snapshot_thread is not None:
+            snapshot_thread.join(timeout=5)
 
 
 if __name__ == "__main__":

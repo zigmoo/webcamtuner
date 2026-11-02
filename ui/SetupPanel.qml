@@ -11,6 +11,8 @@ ScrollView {
     property string feedback: qsTr("Checking your user session…")
     property var runtimeState: ({gpuEnabled: false, gpu: ""})
     property string runtimeMessage: ""
+    property string snapshotsPath: ""
+    property bool openSnapshotsRequested: false
     property string diagnostics: ""
     property string pluginRoot: Qt.resolvedUrl("../").toString().replace(/^file:\/\//, "").replace(/\/$/, "")
     function request(action) {
@@ -24,11 +26,24 @@ ScrollView {
         controller.running = true
     }
     onVisibleChanged: if (visible) { request("status"); refreshRuntime() }
-    Component.onCompleted: { request("status"); refreshRuntime() }
+    Component.onCompleted: { request("status"); refreshRuntime(); snapshotFolder.running = true }
     function refreshRuntime() {
         if (runtimeProcess.running) return
         runtimeProcess.command = ["python3", pluginRoot + "/bin/runtime-control.py", "status"]
         runtimeProcess.running = true
+    }
+    Process {
+        id: snapshotFolder
+        command: ["python3", root.pluginRoot + "/bin/snapshot_files.py"]
+        stdout: StdioCollector { id: folderOutput; waitForEnd: true }
+        onExited: function(code) {
+            try {
+                var result = JSON.parse(folderOutput.text)
+                root.snapshotsPath = result.directory
+                if (code === 0 && root.openSnapshotsRequested) Qt.openUrlExternally("file://" + result.directory.split("/").map(encodeURIComponent).join("/"))
+            } catch (e) { root.runtimeMessage = qsTr("Could not read the snapshot folder") }
+            root.openSnapshotsRequested = false
+        }
     }
     Process {
         id: runtimeProcess
@@ -86,6 +101,18 @@ ScrollView {
             }
         }
         Plain { text: qsTr("GPU setup downloads processing libraries into your home directory. Camera preview reports its measured fresh-frame rate and active processing backend. Restart preview after changing the runtime."); color: "#a9b4c1" }
+        Plain { text: qsTr("Snapshots"); font.pixelSize: 18; font.bold: true }
+        Plain { text: qsTr("Use Snapshot on the Camera tab to save the full camera crop with mirror and background effects.") }
+        TextField { Layout.fillWidth: true; readOnly: true; selectByMouse: true; text: root.snapshotsPath; Accessible.name: qsTr("Snapshot folder") }
+        Button {
+            text: qsTr("Open snapshot folder")
+            enabled: !snapshotFolder.running
+            onClicked: {
+                root.openSnapshotsRequested = true
+                snapshotFolder.command = ["python3", root.pluginRoot + "/bin/snapshot_files.py", "--create"]
+                snapshotFolder.running = true
+            }
+        }
         Plain { text: qsTr("Camera output setup"); font.pixelSize: 22; font.bold: true }
         Plain { text: qsTr("Compatibility test · This build publishes a moving test pattern as WebcamTuner. Your camera and background are not connected to this output yet.") }
         Plain { text: qsTr("The test runs in your user session without administrator access. Closing this window leaves it running. Stop it here; it also stops automatically after 30 minutes."); color: "#a9b4c1" }

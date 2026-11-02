@@ -143,3 +143,16 @@ Performance evidence on framemoowork: RTX5070 CUDA execution verified. A native 
 Draft recovery IPC is included for subsequent updates: draft exports the current profile draft and pending crop edits without saving; restoreDraft restores a compatible snapshot at the same saved-store revision. Its round-trip regression confirms dirty crop recovery without altering saved settings. The previously installed 0.7.1 lacks this interface; it must be saved or explicitly discarded before the first reload into this build.
 
 Sources for backend choices: https://onnxruntime.ai/docs/execution-providers/CUDA-ExecutionProvider.html and https://doc.qt.io/qt-6/qml-qt-labs-folderlistmodel-folderlistmodel.html.
+
+
+## Original identity and snapshots (v0.8.1)
+
+WebcamTuner now has an original brand-independent mark: four framing corners with two tuning sliders. Its theme-aware QML geometry is used in the bar and About; a matching SVG is included under assets for source/distribution use. The mark is authored here under the application Apache-2.0 license and does not use BrioTune artwork or a model-specific camera silhouette.
+
+Snapshot sits beside the source and Preview/Camera off controls. It is enabled once a processed frame confirms the current camera/background configuration. A snapshot branches from the existing capture and matte; it never opens another camera. It applies the same camera crop, mirror, background replacement/blur and background crop, then encodes a high-quality JPEG at the full retained source-crop dimensions, before the preview downscale. Encoding/storage run as a single bounded background job. Configuration generation checks prevent silently capturing a different look while controls change. Save failures are reported separately and do not stop preview.
+
+Photos are written only after Snapshot is requested, to the XDG Pictures folder's WebcamTuner directory. Setup shows that folder and has an Open snapshot folder button. Unique filenames avoid overwrites; files are private, written atomically and read back for verification before Saved appears. No camera images are added to the background library. Runtime imports suppress app-local bytecode writes to avoid touching the watched installed plugin tree.
+
+Three snapshot tests verify full UHD-source crop detail, mirror and background crop pixels, unique files/private modes, and refusal to fall back to raw frames when matting is missing. A live QML-to-worker request saved the expected 1324x744 processed Framework crop, exceeding the 960-pixel preview width. The temporary test photo was deleted after validating dimensions. The original icon was rendered for visual review. Initial Camera viewport, tab navigation, library refresh, palette lifecycle and profile/draft recovery regressions pass with the added control.
+
+The missing-background fix is also included: iPhone JPEG files identified as MPO use their primary still while auxiliary gain/depth images are ignored. Animated PNG/WebP remain rejected. The operator's 22-file folder now lists all22 without errors; both formerly rejected originals decode in Qt. The installed0.7.1 scanner still only sees imported hashed filenames until the update is loaded. Installation remains gated on preserving its unsaved draft.

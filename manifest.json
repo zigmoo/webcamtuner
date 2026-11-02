@@ -2,10 +2,10 @@
   "schemaVersion": 1,
   "id": "moo.webcamtuner",
   "name": "WebcamTuner",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "author": "Jason Benjamin Ziegler Sr",
   "license": "Apache-2.0 AND GPL-3.0-only",
-  "description": "Persistent framing and background preview, with a user-session virtual-camera compatibility test.",
+  "description": "Webcam framing, background preview and snapshots, with user-session camera-output testing.",
   "kinds": [
     "bar-widget"
   ],
@@ -14,7 +14,7 @@
   },
   "barWidget": {
     "displayName": "WebcamTuner",
-    "description": "Frame a camera and save appearance profiles",
+    "description": "Frame a webcam, choose backgrounds and save snapshots",
     "category": "Devices",
     "allowMultiple": false,
     "defaultSection": "right"

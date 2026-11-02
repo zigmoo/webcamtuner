@@ -24,6 +24,7 @@ Rectangle {
     property string libraryMessage: ""
     property Component setupContent: null
     property bool testing: false
+    property string snapshotDirectory: ""
     property string remoteSummary: ""
     property real zoom: 1
     property real centerX: 0.5
@@ -373,6 +374,11 @@ Rectangle {
     Connections {
         target: processor.item
         function onFailed(message) { root.previewOn = false; root.message = message }
+        function onSnapshotFailed(message) { root.message = message }
+        function onSnapshotSaved(result) {
+            root.snapshotDirectory = result.path.slice(0, result.path.lastIndexOf("/"))
+            root.message = qsTr("Snapshot saved: %1 × %2 · %3").arg(result.width).arg(result.height).arg(result.path)
+        }
     }
     ScrollView {
         id: editorScroll
@@ -430,6 +436,12 @@ Rectangle {
                         text: root.previewOn ? qsTr("Camera off") : qsTr("Preview camera")
                         enabled: root.cameraChoiceReady && !root.cameraPending && root.savedCamera !== "" && root.sourceKind === "local" && !root.testing && (root.previewOn || root.backgroundMode !== "image" || root.imageReady)
                         onClicked: { root.autostartRequested = false; root.previewOn = !root.previewOn }
+                    }
+                    Button {
+                        objectName: "snapshotButton"
+                        text: processor.item && processor.item.snapshotPending ? qsTr("Saving…") : qsTr("Snapshot")
+                        enabled: root.previewOn && processor.item !== null && processor.item.snapshotReady
+                        onClicked: processor.item.takeSnapshot()
                     }
                 }
                 Item {
