@@ -20,7 +20,7 @@ MAX_BYTES = 50 * 1024 * 1024
 MAX_PIXELS = 40_000_000
 MAX_IMAGES = 512
 MAX_LIBRARY_BYTES = 1024 * 1024 * 1024
-FORMATS = {'JPEG': '.jpg', 'PNG': '.png', 'WEBP': '.webp'}
+FORMATS = {'JPEG': '.jpg', 'MPO': '.jpg', 'PNG': '.png', 'WEBP': '.webp'}
 Image.MAX_IMAGE_PIXELS = MAX_PIXELS
 
 
@@ -53,11 +53,14 @@ def decode(data):
     with warnings.catch_warnings():
         warnings.simplefilter('error', Image.DecompressionBombWarning)
         with Image.open(io.BytesIO(data)) as image:
-            if image.format not in FORMATS or getattr(image, 'n_frames', 1) != 1:
+            if image.format not in FORMATS or (image.format != 'MPO' and getattr(image, 'n_frames', 1) != 1):
                 raise ValueError('Choose a static JPEG, PNG or WebP image.')
             if image.width * image.height > MAX_PIXELS:
                 raise ValueError('Images must contain at most 40 million pixels.')
             extension = FORMATS[image.format]
+            # iPhone JPEGs may carry auxiliary gain/depth pictures in MPO.
+            # Their first image is the ordinary still background.
+            image.seek(0)
             image.load()
             return ImageOps.exif_transpose(image).convert('RGB'), extension
 

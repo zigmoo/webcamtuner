@@ -75,6 +75,22 @@ class LibraryTests(unittest.TestCase):
         self.assertTrue(self.source.exists())
         self.assertEqual(result['items'], [])
 
+    def test_mpo_jpeg_uses_primary_still_without_rejecting_auxiliary_images(self):
+        photo = self.root / 'iPhone photo.jpeg'
+        Image.new('RGB', (120, 80), 'red').save(photo, format='MPO', save_all=True,
+                                                 append_images=[Image.new('RGB', (120, 80), 'blue')])
+        with Image.open(photo) as image:
+            self.assertEqual(image.format, 'MPO')
+            self.assertGreater(image.n_frames, 1)
+        result = library.add([str(photo)])
+        self.assertEqual(result['errors'], [])
+        entry = result['added'][0]
+        self.assertEqual(Path(entry['path']).read_bytes(), photo.read_bytes())
+        with Image.open(library.local_path(entry['thumbnail'])) as thumb:
+            red, green, blue = thumb.getpixel((20, 20))
+            self.assertGreater(red, 240)
+            self.assertLess(blue, 15)
+
     def test_external_files_appear_update_and_disappear_without_renaming(self):
         folder, _ = library.directories()
         first = folder / 'Beach.JPG'
