@@ -199,6 +199,16 @@ class LibraryTests(unittest.TestCase):
         library.trash_image(image['path'], image['id'], [])
         self.assertNotIn(image['id'], library.read_settings()['overlays'])
 
+    def test_label_text_format_and_position_update_atomically(self):
+        image=library.add([str(self.source)])['added'][0]
+        spec={'enabled':True,'opacity':.75,'x':.4,'y':.2,'fontFamily':'DejaVu Sans','fontSize':.06,'bold':True,'italic':True,'allCaps':True,'text':'Morning light'}
+        result=library.overlay_image(image['path'],image['id'],spec)['items'][0]
+        self.assertEqual(result['label'],'Morning light');self.assertEqual(result['overlay'],{k:v for k,v in spec.items() if k!='text'})
+        for field,value in [('x',-1),('fontSize',0),('italic','yes')]:
+            with self.assertRaises(ValueError):library.overlay_image(image['path'],image['id'],{**spec,field:value})
+        unchanged=library.listing()['items'][0]
+        self.assertEqual(unchanged['label'],result['label']);self.assertEqual(unchanged['overlay'],result['overlay'])
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -7,6 +7,11 @@ Item {
     property var configuration: ({})
     property string pluginRoot: Qt.resolvedUrl("../").toString().replace(/^file:\/\//, "").replace(/\/$/, "")
     property string frameUrl: ""
+    property string sourceFrameUrl: ""
+    property string labelBitmapUrl: ""
+    property string labelBitmapKey: ""
+    property int labelBitmapWidth: 0
+    property int labelBitmapHeight: 0
     property string effect: ""
     property var format: ({})
     property int desiredGeneration: 0
@@ -36,11 +41,13 @@ Item {
     function activate() {
         if (active) {
             frameUrl = ""
-            process.command = [pluginRoot + "/bin/preview-python", pluginRoot + "/bin/process_preview.py", "--request", JSON.stringify(Object.assign({}, configuration, {configurationRevision: desiredGeneration}))]
+            labelBitmapUrl="";labelBitmapKey=""
+            process.command = [pluginRoot + "/bin/preview-python", pluginRoot + "/bin/process_preview.py", "--ui-overlay", "--request", JSON.stringify(Object.assign({}, configuration, {configurationRevision: desiredGeneration}))]
             process.running = true
         } else {
             process.running = false
             frameUrl = ""
+            sourceFrameUrl = ""
         }
     }
     onActiveChanged: activate()
@@ -74,6 +81,8 @@ Item {
                             captureFps: value.captureFps, retainedWidth: value.retainedWidth, retainedHeight: value.retainedHeight,
                             previewWidth: value.width, previewHeight: value.height, previewFps: value.previewFps, provider: value.provider, dropped: value.dropped }
                         root.frameUrl = "data:image/jpeg;base64," + value.frame
+                        if (value.sourceFrame) root.sourceFrameUrl = "data:image/jpeg;base64," + value.sourceFrame
+                        if(value.labelBitmap){root.labelBitmapUrl="data:image/png;base64,"+value.labelBitmap;root.labelBitmapKey=value.labelKey;root.labelBitmapWidth=value.labelWidth;root.labelBitmapHeight=value.labelHeight}
                         root.effect = value.effect
                         root.frameReceived(value.effect)
                     }

@@ -12,6 +12,9 @@ Item {
     property var runtimeState: ({gpuEnabled: false, gpu: ""})
     property string runtimeMessage: ""
     property string snapshotsPath: ""
+    property string osSnapshotsPath: ""
+    property bool mirrorSnapshots: true
+    property string snapshotMessage: ""
     property bool openSnapshotsRequested: false
     property string diagnostics: ""
     property string pluginRoot: Qt.resolvedUrl("../").toString().replace(/^file:\/\//, "").replace(/\/$/, "")
@@ -39,9 +42,11 @@ Item {
         onExited: function(code) {
             try {
                 var result = JSON.parse(folderOutput.text)
-                root.snapshotsPath = result.directory
+                if(code!==0 || typeof result.mirrorToOS!=="boolean")throw new Error(result.error||"Snapshot settings could not be read")
+                root.snapshotsPath=result.directory;root.osSnapshotsPath=result.osDirectory;root.mirrorSnapshots=result.mirrorToOS
+                root.snapshotMessage=qsTr("Snapshot settings saved and verified")
                 if (code === 0 && root.openSnapshotsRequested) Qt.openUrlExternally("file://" + result.directory.split("/").map(encodeURIComponent).join("/"))
-            } catch (e) { root.runtimeMessage = qsTr("Could not read the snapshot folder") }
+            } catch (e) { root.snapshotMessage=String(e.message||e) }
             root.openSnapshotsRequested = false
         }
     }
@@ -104,7 +109,7 @@ Item {
         }
         Plain { text: qsTr("GPU setup downloads processing libraries into your home directory. Camera preview reports its measured fresh-frame rate and active processing backend. Restart preview after changing the runtime."); color: "#a9b4c1" }
         Plain { text: qsTr("Snapshots"); font.pixelSize: 18; font.bold: true }
-        Plain { text: qsTr("Use Snapshot on the Camera tab to save the full camera crop with mirror and background effects.") }
+        Plain { text: qsTr("Snapshot saves the full camera crop, label and effects in WebcamTuner’s local snapshot folder.") }
         TextField { Layout.fillWidth: true; readOnly: true; selectByMouse: true; text: root.snapshotsPath; Accessible.name: qsTr("Snapshot folder") }
         Button {
             text: qsTr("Open snapshot folder")
@@ -115,6 +120,18 @@ Item {
                 snapshotFolder.running = true
             }
         }
+        CheckBox {
+            objectName:"mirrorSnapshotsToOS"
+            Layout.fillWidth:true
+            text:snapshotFolder.running?qsTr("Saving snapshot setting…"):qsTr("Mirror snapshots to %1").arg(root.osSnapshotsPath||qsTr("Omarchy screenshots"))
+            checked:root.mirrorSnapshots
+            enabled:!snapshotFolder.running
+            nextCheckState:function(){return checkState}
+            contentItem:Text {text:parent.text;textFormat:Text.PlainText;wrapMode:Text.WordWrap;color:"#e9ecef";leftPadding:parent.indicator.width+parent.spacing;verticalAlignment:Text.AlignVCenter}
+            onClicked:{snapshotFolder.command=["python3",root.pluginRoot+"/bin/snapshot_files.py","--mirror-os",String(!root.mirrorSnapshots)];snapshotFolder.running=true}
+        }
+        Plain { text:qsTr("Mirrored copies also appear at the front of Omasnap’s recent screenshot stack.");color:"#a9b4c1" }
+        Plain { text:root.snapshotMessage;visible:text!=="";color:"#93c5aa" }
         Plain { text: qsTr("Camera output setup"); font.pixelSize: 22; font.bold: true }
         Plain { text: qsTr("Compatibility test · This build publishes a moving test pattern as WebcamTuner. Your camera and background are not connected to this output yet.") }
         Plain { text: qsTr("The test runs in your user session without administrator access. Closing this window leaves it running. Stop it here; it also stops automatically after 30 minutes."); color: "#a9b4c1" }

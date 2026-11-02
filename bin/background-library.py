@@ -144,11 +144,18 @@ def read_settings():
 
 
 def validate_overlay(value):
-    if not isinstance(value, dict) or set(value) != {'enabled', 'opacity'} or not isinstance(value['enabled'], bool):
+    if not isinstance(value, dict) or not {'enabled', 'opacity'} <= set(value) or set(value) - {'enabled','opacity','x','y','fontFamily','fontSize','bold','italic','allCaps'} or not isinstance(value['enabled'], bool):
         raise ValueError('Invalid label overlay.')
     opacity = value['opacity']
     if isinstance(opacity, bool) or not isinstance(opacity, (int, float)) or not math.isfinite(opacity) or not 0 <= opacity <= 1:
         raise ValueError('Label opacity must be between 0 and 100%.')
+    for field in ('x','y','fontSize'):
+        if field in value:
+            v = value[field]; low,high = (.012,.15) if field == 'fontSize' else (0,1)
+            if isinstance(v,bool) or not isinstance(v,(int,float)) or not math.isfinite(v) or not low <= v <= high: raise ValueError('Invalid label position or size.')
+    for field in ('bold','italic','allCaps'):
+        if field in value and not isinstance(value[field],bool): raise ValueError('Invalid label format.')
+    if 'fontFamily' in value and (not isinstance(value['fontFamily'],str) or len(value['fontFamily']) > 128 or any(ord(c)<32 or ord(c)==127 for c in value['fontFamily'])): raise ValueError('Invalid label font.')
     return value
 
 
@@ -311,6 +318,10 @@ def label_image(value, expected_id, label):
 
 
 def overlay_image(value, expected_id, overlay):
+    if not isinstance(overlay,dict):raise ValueError('Invalid label overlay.')
+    overlay = dict(overlay)
+    text = overlay.pop('text', None)
+    if text is not None and (not isinstance(text,str) or len(text)>80 or any(ord(c)<32 or ord(c)==127 for c in text)): raise ValueError('Use a label of up to 80 characters on one line.')
     validate_overlay(overlay)
     _, image = managed_image(value, expected_id)
     settings = crop_file(); settings.parent.mkdir(parents=True, mode=0o700, exist_ok=True)
@@ -321,9 +332,13 @@ def overlay_image(value, expected_id, overlay):
         if image['id'] not in document['overlays'] and len(document['overlays']) >= MAX_IMAGES:
             raise ValueError('Label overlay settings are full.')
         document['overlays'][image['id']] = overlay
+        if text is not None:
+            if text.strip(): document['labels'][image['id']] = text.strip()
+            else: document['labels'].pop(image['id'],None)
         atomic_write(settings, (json.dumps(document) + '\n').encode())
         if read_settings()['overlays'].get(image['id']) != overlay:
             raise ValueError('Label overlay could not be verified.')
+        if text is not None and read_settings()['labels'].get(image['id'],'') != text.strip(): raise ValueError('Label text could not be verified.')
     finally:
         os.close(fd)
     return listing()

@@ -52,6 +52,7 @@ ColumnLayout {
     signal lockRequested(var image)
     signal trashRequested(var image)
     signal labelRequested(var image, string label)
+    signal labelEditingChanged(bool active)
     signal overlayRequested(var image, bool enabled, real opacity)
     spacing: 10
     RowLayout {
@@ -78,7 +79,7 @@ ColumnLayout {
         clip: true
         model: root.library.items
         cellWidth: width / Math.max(1, Math.floor(width / 150))
-        cellHeight: 158
+        cellHeight: 132
         boundsBehavior: Flickable.StopAtBounds
         keyNavigationEnabled: true
         activeFocusOnTab: true
@@ -88,7 +89,6 @@ ColumnLayout {
             required property var modelData
             width: grid.cellWidth - 8
             height: grid.cellHeight - 8
-            enabled: !root.busy
             Accessible.name: modelData.label || modelData.name
             highlighted: root.selectedPath === modelData.path
             background: Rectangle { color: parent.highlighted ? "#284c44" : "#222b35"; radius: 4; border.width: 2; border.color: parent.highlighted ? "#93c5aa" : "#39414b" }
@@ -143,6 +143,7 @@ ColumnLayout {
                         color: parent.activeFocus ? "#303944" : "transparent"
                         Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: "#93c5aa"; visible: parent.parent.activeFocus }
                     }
+                    onActiveFocusChanged:if(activeFocus)root.labelEditingChanged(true)
                     onTextEdited: labelEdited = true
                     onEditingFinished: {
                         var label = text.trim()
@@ -151,57 +152,10 @@ ColumnLayout {
                         labelEdited = false
                         text = Qt.binding(function() { return card.modelData.label || card.modelData.name })
                         if (changed) root.labelRequested(image, label === image.name ? "" : label)
+                        root.labelEditingChanged(false)
                     }
                 }
-                RowLayout {
-                    Layout.fillWidth: true
-                    spacing: 0
-                    CheckBox {
-                        objectName: "showBackgroundLabel-" + card.modelData.id
-                        text: qsTr("Show label")
-                        checked: !!(card.modelData.overlay && card.modelData.overlay.enabled)
-                        nextCheckState: function() { return checkState }
-                        padding: 0
-                        spacing: 2
-                        font.pixelSize: 11
-                        enabled: !root.busy
-                        onClicked: root.overlayRequested(card.modelData, !checked, card.modelData.overlay ? card.modelData.overlay.opacity : 0.75)
-                    }
-                    Item { Layout.fillWidth: true }
-                    ToolButton {
-                        objectName: "backgroundLabelOpacityButton-" + card.modelData.id
-                        text: Math.round((card.modelData.overlay ? card.modelData.overlay.opacity : 0.75) * 100) + "%"
-                        visible: !!(card.modelData.overlay && card.modelData.overlay.enabled)
-                        font.pixelSize: 11
-                        padding: 1
-                        Accessible.name: qsTr("Label opacity")
-                        onClicked: opacityPopup.open()
-                        Popup {
-                            id: opacityPopup
-                            width: 220
-                            padding: 12
-                            contentItem: ColumnLayout {
-                                Label { text: qsTr("Label opacity · %1%").arg(Math.round(labelOpacity.value * 100)) }
-                                Slider {
-                                    id: labelOpacity
-                                    objectName: "backgroundLabelOpacity-" + card.modelData.id
-                                    Layout.fillWidth: true
-                                    from: 0; to: 1; stepSize: 0.05
-                                    value: card.modelData.overlay ? card.modelData.overlay.opacity : 0.75
-                                    onMoved: opacityDelay.restart()
-                                }
-                            }
-                            Timer {
-                                id: opacityDelay
-                                interval: 300
-                                onTriggered: {
-                                    if (labelOpacity.pressed) { restart(); return }
-                                    root.overlayRequested(card.modelData, true, labelOpacity.value)
-                                }
-                            }
-                        }
-                    }
-                }
+
             }
             onClicked: root.selected(modelData.path)
         }

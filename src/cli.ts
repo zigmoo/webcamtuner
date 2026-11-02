@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { readStore, saveStore, storePath, cropPixels } from './profiles.js'
 import { cameraAliases } from './cameras.js'
 
-const cli = Cli.create('webcamtuner', { version: '0.8.4', description: 'WebcamTuner preview: persist camera framing and background profiles. Preview autostart is a saved profile choice.' })
+const cli = Cli.create('webcamtuner', { version: '0.8.5', description: 'WebcamTuner preview: persist camera framing and background profiles. Preview autostart is a saved profile choice.' })
 cli.command('read', { description: 'Read profiles and their revision without starting capture', run: () => readStore() })
 cli.command('devices', { description: 'Read stable local webcam identifiers without opening a camera', run: () => ({ aliases: cameraAliases() }) })
 cli.command('save', {
@@ -57,7 +57,7 @@ cli.command('label-background', {
 })
 cli.command('background-overlay', {
   description: 'Save and verify per-image label visibility and opacity',
-  options: z.object({ path: z.string().max(4096), id: z.string().regex(/^[a-f0-9]{64}$/), overlay: z.string().max(256) }),
+  options: z.object({ path: z.string().max(4096), id: z.string().regex(/^[a-f0-9]{64}$/), overlay: z.string().max(2048) }),
   run: c => backgroundAction('overlay', c.options.path, c.options.id, ['--overlay', c.options.overlay]),
 })
 cli.command('trash-background', {

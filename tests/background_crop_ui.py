@@ -26,7 +26,7 @@ def controller(action,args):
  if hasattr(args,'toVariant'):args=args.toVariant()
  data=json.loads(subprocess.check_output([str(root/'bin/webcamtuner'),action,*args,'--json'],text=True))
  ev('accept('+json.dumps(action)+','+json.dumps(data)+')')
-editor.request.connect(controller);controller('read',[]);editor.setProperty('section','background');ev('addBackgrounds('+json.dumps([str(source)])+')');v.show()
+editor.request.connect(controller);editor.cameraTabRequested.connect(lambda:editor.setProperty('section','camera'));controller('read',[]);editor.setProperty('section','background');ev('addBackgrounds('+json.dumps([str(source)])+')');v.show()
 def find(item,name):
  if item.objectName()==name:return item
  if isinstance(item,QQuickItem):
@@ -47,9 +47,9 @@ def open_editor():
  QTimer.singleShot(350,guarded(exercise))
 def exercise():
  global final_crop
- canvas=find(v.contentItem(),'backgroundCropCanvas');assert canvas
+ canvas=find(v.contentItem(),'sharedCropCanvas');assert canvas
  bounds=ev('imageBounds',canvas);assert bounds.width()>300 and bounds.height()>300
- dialog=editor.findChild(QObject,'backgroundCropDialog')
+ dialog=editor.findChild(QObject,'compositionCropDialog')
  assert dialog and dialog.property('visible')
  assert dialog.property('width')<=v.width() and dialog.property('height')<=v.height()
  drag(find(v.contentItem(),'cropHandle-se'),-130,-80)
@@ -70,7 +70,7 @@ def verify_saved():
  assert list(settings['crops'].values())==[final_crop]
  store=json.loads((scratch/'config/profiles.json').read_text())
  assert store['profiles'][0]['background']['crop']==final_crop
- ev('backgroundFraming.closeEditor()')
+ ev('cropTool.closeEditor()')
  finished=True;print('PASS: full-image crop dialog, resize/move handles, 16:9 bounded source selection and automatic crop/profile persistence');app.quit()
 QTimer.singleShot(600,guarded(open_editor));QTimer.singleShot(12000,app.quit);app.exec()
 if errors or not finished:raise SystemExit('; '.join(errors) or 'Crop test timed out')

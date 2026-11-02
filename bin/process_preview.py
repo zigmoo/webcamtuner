@@ -96,28 +96,37 @@ def validate_settings(settings: dict) -> dict:
         opacity = overlay.get('opacity')
         if isinstance(opacity, bool) or not isinstance(opacity, (int, float)) or not math.isfinite(opacity) or not 0 <= opacity <= 1:
             raise ValueError('Invalid background label opacity')
+        for key in ('x','y','fontSize'):
+            if key in overlay:
+                v=overlay[key]; low,high=(.012,.15) if key=='fontSize' else (0,1)
+                if isinstance(v,bool) or not isinstance(v,(int,float)) or not math.isfinite(v) or not low<=v<=high: raise ValueError('Invalid label position or size')
+        for key in ('bold','italic','allCaps'):
+            if key in overlay and not isinstance(overlay[key],bool): raise ValueError('Invalid label format')
+        family=overlay.get('fontFamily','sans')
+        if not isinstance(family,str) or len(family)>128 or any(ord(c)<32 or ord(c)==127 for c in family): raise ValueError('Invalid label font')
     return settings
 
 
-@lru_cache(maxsize=1)
-def label_font_path():
+@lru_cache(maxsize=32)
+def label_font_path(family='sans', bold=False, italic=False):
+    pattern = family.replace(':', ' ') + (':weight=bold' if bold else '') + (':slant=italic' if italic else '')
     try:
-        result = subprocess.check_output(['fc-match', '-f', '%{file}', 'sans'], text=True, timeout=3)
+        result = subprocess.check_output(['fc-match', '-f', '%{file}', pattern], text=True, timeout=3)
         if Path(result).is_file(): return result
     except (OSError, subprocess.SubprocessError): pass
     return 'DejaVuSans.ttf'
 
 
 @lru_cache(maxsize=16)
-def label_bitmap(text, width, height):
-    size = max(10, round(height * .034))
+def label_bitmap(text, width, height, family='sans', bold=False, italic=False, font_size=.034, all_caps=False):
+    size = max(10, round(height * font_size))
     margin = max(4, round(height * .02))
     stroke = max(1, round(size / 16))
-    try: font = ImageFont.truetype(label_font_path(), size)
+    try: font = ImageFont.truetype(label_font_path(family,bold,italic), size)
     except OSError: font = ImageFont.load_default(size=size)
     available = max(1, width - 2 * margin - 2 * stroke)
     lines = ['']
-    for character in text:
+    for character in text.upper() if all_caps else text:
         if font.getlength(lines[-1] + character) > available:
             if len(lines) == 2:
                 while lines[-1] and font.getlength(lines[-1] + '…') > available: lines[-1] = lines[-1][:-1]
@@ -127,23 +136,25 @@ def label_bitmap(text, width, height):
         lines[-1] += character
     text = '\n'.join(lines)
     bounds = ImageDraw.Draw(Image.new('RGBA', (1,1))).multiline_textbbox((0,0), text, font=font, stroke_width=stroke, spacing=max(2,size//8))
-    tile = Image.new('RGBA', (width, min(height, bounds[3] - bounds[1] + stroke * 2 + margin)))
+    tile = Image.new('RGBA', (min(width,max(1,math.ceil(bounds[2]-bounds[0]+stroke*2))), min(height,max(1,math.ceil(bounds[3]-bounds[1]+stroke*2)))))
     draw = ImageDraw.Draw(tile)
-    draw.multiline_text((margin + stroke, stroke - bounds[1]), text, font=font, fill=(255,255,255,255),
+    draw.multiline_text((stroke - bounds[0], stroke - bounds[1]), text, font=font, fill=(255,255,255,255),
         stroke_fill=(0,0,0,204), stroke_width=stroke, spacing=max(2, size//8))
     pixels = np.asarray(tile)
     return cv2.cvtColor(pixels[...,:3], cv2.COLOR_RGB2BGR), pixels[...,3:4].astype(np.float32) / 255
 
 
 def apply_label_overlay(frame, overlay):
-    """Apply the same output-space label to preview, snapshots and publication frames."""
+    """Output-space label uses the same style/position for snapshots and publication."""
     if not overlay or not overlay.get('enabled') or not overlay.get('text') or overlay.get('opacity', .75) <= 0:
         return frame
     h,w = frame.shape[:2]
-    color, alpha = label_bitmap(overlay['text'], w, h)
+    color, alpha = label_bitmap(overlay['text'], w, h, overlay.get('fontFamily','sans'), overlay.get('bold',False),
+        overlay.get('italic',False), overlay.get('fontSize',.034), overlay.get('allCaps',False))
     alpha = alpha * overlay.get('opacity', .75)
     result = frame.copy()
-    target = result[h-color.shape[0]:]
+    x = round((w-color.shape[1])*overlay.get('x',.02)); y = round((h-color.shape[0])*overlay.get('y',.96))
+    target = result[y:y+color.shape[0], x:x+color.shape[1]]
     target[:] = np.clip(color.astype(np.float32) * alpha + target.astype(np.float32) * (1-alpha), 0,255).astype(np.uint8)
     return result
 
@@ -344,10 +355,10 @@ def save_processed_snapshot(frame, matte, settings, background):
     if not okay:
         raise ValueError('Snapshot could not be encoded.')
     path = snapshot_files.save(encoded.tobytes())
-    return {'path': str(path), 'width': cw, 'height': ch}
+    return {'path': str(path), 'width': cw, 'height': ch, **snapshot_files.mirror_snapshot(path)}
 
 
-def run(initial: dict, frame_limit: int = 0) -> None:
+def run(initial: dict, frame_limit: int = 0, ui_overlay: bool = False) -> None:
     cv2.setNumThreads(2)
     current = validate_settings(initial)
     updates: list[dict] = []
@@ -417,6 +428,7 @@ def run(initial: dict, frame_limit: int = 0) -> None:
         threading.Thread(target=read_updates, daemon=True).start()
         count, last_sequence, dropped = 0, 0, 0
         delivered = deque(maxlen=60)
+        last_label_style = None
         while alive.is_set():
             began = time.monotonic()
             with guard:
@@ -474,7 +486,7 @@ def run(initial: dict, frame_limit: int = 0) -> None:
                 placement = current.get('foreground', {'x':0, 'y':0})
                 if placement.get('x', 0) or placement.get('y', 0):
                     frame, _ = placed_foreground(full_frame, None, current['crop'], current.get('mirror', True), placement, frame.shape[1], frame.shape[0])
-            if mode == 'image': frame = apply_label_overlay(frame, current['background'].get('labelOverlay'))
+            if mode == 'image' and not ui_overlay: frame = apply_label_overlay(frame, current['background'].get('labelOverlay'))
             with guard:
                 snapshot = snapshots.pop() if snapshots else None
             if snapshot is not None:
@@ -498,7 +510,23 @@ def run(initial: dict, frame_limit: int = 0) -> None:
             now = time.monotonic()
             delivered.append(now)
             actual_fps = (len(delivered) - 1) / (delivered[-1] - delivered[0]) if len(delivered) > 1 else 0
-            emit({"frame": base64.b64encode(encoded).decode("ascii"), "effect": mode, "width": frame.shape[1], "height": frame.shape[0],
+            source_record = {}
+            overlay=current['background'].get('labelOverlay',{})
+            if ui_overlay and mode=='image' and overlay.get('enabled') and overlay.get('text'):
+                key=(overlay['text'],frame.shape[1],frame.shape[0],overlay.get('fontFamily') or 'sans',overlay.get('bold',False),overlay.get('italic',False),overlay.get('fontSize',.034),overlay.get('allCaps',False))
+                if key!=last_label_style:
+                    color,alpha=label_bitmap(*key)
+                    rgba=cv2.cvtColor(color,cv2.COLOR_BGR2BGRA);rgba[...,3]=(alpha[...,0]*255).astype(np.uint8)
+                    label_ok,png=cv2.imencode('.png',rgba)
+                    if label_ok:
+                        source_record.update(labelBitmap=base64.b64encode(png).decode('ascii'),labelKey=json.dumps(key),labelWidth=color.shape[1],labelHeight=color.shape[0])
+                        last_label_style=key
+            if current.get('sourcePreview', False):
+                source_image = cv2.resize(full_frame, (960,540))
+                if current.get('mirror',True): source_image = cv2.flip(source_image,1)
+                source_ok, source_jpeg = cv2.imencode('.jpg', source_image, [cv2.IMWRITE_JPEG_QUALITY,82])
+                if source_ok: source_record['sourceFrame'] = base64.b64encode(source_jpeg).decode('ascii')
+            emit({**source_record, "frame": base64.b64encode(encoded).decode("ascii"), "effect": mode, "width": frame.shape[1], "height": frame.shape[0],
                   "captureWidth": source_width, "captureHeight": source_height, "captureFps": source_fps, "previewFps": actual_fps,
                   "configurationRevision": current.get("configurationRevision", 0),
                   "sequence": sequence, "dropped": dropped, "processingMs": (now - began) * 1000,
@@ -523,9 +551,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--request", required=True)
     parser.add_argument("--frames", type=int, default=0)
+    parser.add_argument("--ui-overlay", action="store_true")
     args = parser.parse_args()
     try:
-        run(json.loads(args.request), args.frames)
+        run(json.loads(args.request), args.frames, args.ui_overlay)
     except (ValueError, RuntimeError, OSError, cv2.error, subprocess.SubprocessError) as error:
         emit({"error": str(error)})
         raise SystemExit(1)

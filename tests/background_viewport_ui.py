@@ -24,7 +24,7 @@ failures=[];finished=False
 
 def normal():
  try:
-  for name in ('backgroundZoom','profileSaveState'):
+  for name in ('backgroundLibraryPath','profileSaveState'):
    item=editor.findChild(QObject,name);point=item.mapToItem(editor,QPointF(0,0))
    assert point.y()>=0 and point.y()+item.height()<=editor.height(),(name,point.y(),item.height(),editor.height())
   assert v.grabWindow().save(str(Path(os.environ['WEBCAMTUNER_TEST_ROOT'])/'background-layout-fixed.png'))
@@ -33,16 +33,16 @@ def normal():
 def scroll_into_view():
  try:
   global flick,stage,before
-  scroll=editor.findChild(QObject,'editorScroll');flick=scroll.property('contentItem');stage=editor.findChild(QObject,'backgroundPreviewStage')
+  scroll=editor.findChild(QObject,'editorScroll');flick=scroll.property('contentItem');stage=editor.findChild(QObject,'backgroundGrid')
   bar=editor.findChild(QObject,'editorScrollbar');assert bar.property('visible')
   assert bar.height()>200 and bar.mapToItem(editor,QPointF(0,0)).x()>editor.width()-50
-  y=stage.mapToItem(editor,QPointF(0,0)).y();flick.setProperty('contentY',max(0,flick.property('contentY')+y-140))
+  y=stage.mapToItem(editor,QPointF(0,0)).y();flick.setProperty('contentY',max(0,flick.property('contentY')+y-140));stage.setProperty('contentY',132)
   QTimer.singleShot(100,wheel)
  except Exception as e:failures.append(str(e));app.quit()
 def wheel():
  try:
   global before
-  before=flick.property('contentY')
+  before=stage.property('contentY')
   pos=stage.mapToScene(QPointF(stage.width()/2,stage.height()/2))
   event=QWheelEvent(pos,QPointF(v.mapToGlobal(pos.toPoint())),QPoint(0,0),QPoint(0,120),Qt.NoButton,Qt.NoModifier,Qt.ScrollUpdate,False)
   QGuiApplication.sendEvent(v,event);QTimer.singleShot(200,finish)
@@ -50,7 +50,7 @@ def wheel():
 def finish():
  global finished
  try:
-  assert flick.property('contentY')<before,'Wheel over the image must scroll the page'
+  assert stage.property('contentY')<before,'Wheel over the background grid must scroll its images'
   assert ev('backgroundCrop.zoom')==1,'Plain scrolling must not change background zoom'
   flick.setProperty('contentY',flick.property('contentHeight'))
   item=editor.findChild(QObject,'profileSaveState');point=item.mapToItem(editor,QPointF(0,0));assert 0<=point.y()<editor.height()

@@ -15,6 +15,16 @@ spec.loader.exec_module(preview)
 
 
 class BackgroundTests(unittest.TestCase):
+    def test_label_position_and_caps_are_applied_to_output_pixels(self):
+        frame=np.zeros((360,640,3),dtype=np.uint8)
+        spec={'enabled':True,'opacity':1,'text':'Label','fontFamily':'DejaVu Sans','bold':True,'italic':True,'allCaps':True,'fontSize':.06,'x':0,'y':0}
+        top=preview.apply_label_overlay(frame,spec)
+        self.assertGreater(int(top[:100,:300].sum()),0);self.assertEqual(int(top[-100:].sum()),0)
+        bottom=preview.apply_label_overlay(frame,{**spec,'x':1,'y':1})
+        self.assertEqual(int(bottom[:100].sum()),0);self.assertGreater(int(bottom[-100:,-300:].sum()),0)
+        equivalent=preview.apply_label_overlay(frame,{**spec,'text':'LABEL','allCaps':False})
+        np.testing.assert_array_equal(top,equivalent)
+        self.assertEqual(spec['text'],'Label')
     def test_label_overlay_opacity_does_not_change_other_pixels_or_source(self):
         frame = np.full((360,640,3), 30, dtype=np.uint8)
         spec = {'enabled':True, 'opacity':.75, 'text':'Sunrise ☀'}

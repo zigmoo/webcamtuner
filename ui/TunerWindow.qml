@@ -45,6 +45,7 @@ FloatingWindow {
         editor.previewOn = false
         tabs.currentIndex = 2
     }
+    function openCamera() { openEditor(); tabs.currentIndex=0 }
     function openBackgrounds() {
         openEditor()
         editor.autostartRequested = false
@@ -123,6 +124,7 @@ FloatingWindow {
         color: window.color
         accent: window.accent
         onRequest: function(action, args) { bridge.request(action, args) }
+        onCameraTabRequested: tabs.currentIndex = 0
         Keys.onEscapePressed: window.closeEditor()
     }
 }

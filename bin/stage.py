@@ -11,6 +11,8 @@ version = json.loads((root / "manifest.json").read_text())["version"]
 (root / "ui" / "BuildInfo.js").write_text(".pragma library\n// Generated from manifest.json by stage.py.\nvar version = " + json.dumps(version) + ";\n")
 for filename in ("manifest.json", "BarWidget.qml", "Service.qml", "Preview.qml"):
     shutil.copy2(root / filename, target / filename)
+if (target / "ui").exists():
+    shutil.rmtree(target / "ui")
 shutil.copytree(root / "ui", target / "ui", dirs_exist_ok=True)
 shutil.copytree(root / "assets", target / "assets", dirs_exist_ok=True)
 (target / "bin").mkdir(exist_ok=True)

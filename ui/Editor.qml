@@ -45,6 +45,15 @@ Rectangle {
     property string imagePath: ""
     property var backgroundCrop: ({zoom: 1, centerX: 0.5, centerY: 0.5})
     property var backgroundLabelOverlay: ({enabled: false, opacity: 0.75, text: ""})
+    property var labelDrafts: ({})
+    property var labelInFlight: null
+    property int labelGeneration: 0
+    property bool previewLabelEditing: false
+    property bool galleryLabelEditing: false
+    readonly property bool labelEditing: previewLabelEditing || galleryLabelEditing
+    property bool labelSaveFailed: false
+    property string labelMessage: ""
+    property var deferredLibrary: null
     property var cropDrafts: ({})
     property var cropInFlight: null
     property string cropMessage: ""
@@ -119,21 +128,22 @@ Rectangle {
     }
     function autosaveWhenReady() {
         if (!dirty || automaticWritesPaused || saveFailed || !document) return
-        if (cropSaveFailed) return
-        if (busy || savePending || cameraPending || mirrorPending || autostartPending || cropInFlight !== null || Object.keys(cropDrafts).length) { autosave.restart(); return }
+        if (cropSaveFailed || labelSaveFailed) return
+        if (busy || savePending || cameraPending || mirrorPending || autostartPending || cropInFlight !== null || Object.keys(cropDrafts).length || labelEditing || labelInFlight !== null || Object.keys(labelDrafts).length) { autosave.restart(); return }
         if (!profileName.trim() || (backgroundMode === "image" && !imageReady)) return
         save()
     }
     function prepareUpdate() {
-        if (busy || savePending || cropInFlight !== null) return null
+        if (busy || savePending || cropInFlight !== null || labelInFlight !== null || labelEditing) return null
         automaticWritesPaused = true
-        autosave.stop(); cropSave.stop()
+        autosave.stop(); cropSave.stop(); labelSave.stop()
         return exportDraft()
     }
     function resumeAutomaticWrites() {
         automaticWritesPaused = false
         if (dirty) autosave.restart()
         if (Object.keys(cropDrafts).length) cropSave.restart()
+        if (Object.keys(labelDrafts).length) labelSave.restart()
     }
     function backgroundUrl(path) {
         var value = path.trim()
@@ -156,15 +166,49 @@ Rectangle {
         mark()
     }
     function syncBackgroundOverlay() {
+        if (labelDrafts[imagePath]) { backgroundLabelOverlay = labelDrafts[imagePath].spec; return }
         var item = backgroundLibrary.items.find(i => i.path === imagePath)
         if (!item && backgroundLibrary.selected && backgroundLibrary.selected.path === imagePath) item = backgroundLibrary.selected
         if (!item) return
         var setting = item.overlay || {enabled: false, opacity: 0.75}
-        var next = {enabled: !!setting.enabled, opacity: setting.opacity, text: (item.label || item.name).replace(/[\u0000-\u001f\u007f]/g, " ").slice(0,256)}
-        if (JSON.stringify(next) !== JSON.stringify(backgroundLabelOverlay)) {
+        var next = Object.assign({},setting,{enabled:!!setting.enabled,opacity:setting.opacity,text:(item.label||item.name).replace(/[\u0000-\u001f\u007f]/g," ").slice(0,256)})
+        if (labelIdentity(next) !== labelIdentity(backgroundLabelOverlay)) {
             backgroundLabelOverlay = next
             if (document && backgroundMode === "image") mark()
         }
+    }
+    function labelIdentity(value) {
+        var spec=Object.assign({enabled:false,opacity:.75,text:"",x:.02,y:.96,fontFamily:"sans",fontSize:.034,bold:false,italic:false,allCaps:false},value)
+        return JSON.stringify([spec.enabled,spec.opacity,spec.text,spec.x,spec.y,spec.fontFamily,spec.fontSize,spec.bold,spec.italic,spec.allCaps])
+    }
+    function installLibrary(value) {
+        if (galleryLabelEditing) { deferredLibrary=value; return }
+        backgroundLibrary=value
+        syncBackgroundOverlay()
+    }
+    onGalleryLabelEditingChanged: {
+        if (!galleryLabelEditing && deferredLibrary !== null) { var next=deferredLibrary;deferredLibrary=null;installLibrary(next) }
+    }
+    function editLabel(patch) {
+        var image=backgroundLibrary.items.find(i=>i.path===imagePath)
+        if (!image && backgroundLibrary.selected && backgroundLibrary.selected.path===imagePath) image=backgroundLibrary.selected
+        if (!image) return
+        var next=Object.assign({},backgroundLabelOverlay,patch)
+        var drafts=Object.assign({},labelDrafts), previous=drafts[imagePath]
+        drafts[imagePath]={image:image,spec:next,textChanged:!!(previous&&previous.textChanged)||patch.text!==undefined,generation:++labelGeneration}
+        labelDrafts=drafts; backgroundLabelOverlay=next; labelSaveFailed=false
+        labelMessage=qsTr("Saving label…")
+        mark();labelSave.restart()
+    }
+    function flushLabel() {
+        if(automaticWritesPaused || labelSaveFailed)return
+        if(busy || labelInFlight!==null || labelEditing){labelSave.restart();return}
+        var paths=Object.keys(labelDrafts)
+        if(!paths.length)return
+        var path=paths[0],draft=labelDrafts[path],payload=Object.assign({},draft.spec)
+        if(!draft.textChanged)delete payload.text
+        labelInFlight={path:path,generation:draft.generation}
+        request("background-overlay",["--path",draft.image.path,"--id",draft.image.id,"--overlay",JSON.stringify(payload)])
     }
     function cropFor(path, fallback) {
         if (cropDrafts[path]) return cropDrafts[path]
@@ -194,14 +238,11 @@ Rectangle {
     }
     function cropBackground(image) {
         chooseBackground(image.path)
-        backgroundFraming.openEditor()
-        Qt.callLater(function() {
-            var y = backgroundFraming.mapToItem(editorScroll.contentItem.contentItem, 0, 0).y
-            var flick = editorScroll.contentItem
-            if (y < flick.contentY || y + backgroundFraming.height > flick.contentY + flick.height)
-                flick.contentY = Math.max(0, Math.min(flick.contentHeight - flick.height, y))
-        })
+        cameraTabRequested()
+        cropTool.target="background"
+        Qt.callLater(cropTool.openEditor)
     }
+    signal cameraTabRequested()
     function lockBackground(image) {
         request("lock-background", ["--path", image.path, "--id", image.id, "--locked", String(!image.locked)])
     }
@@ -232,6 +273,7 @@ Rectangle {
     function previewSettings() {
         if (backgroundMode === "image" && !imageReady) return null
         return { camera: savedCamera, mirror: mirror, foreground: foreground, crop: { zoom: zoom, centerX: centerX, centerY: centerY },
+            sourcePreview: cropTool.sourcePreviewRequested,
             background: { mode: backgroundMode, imagePath: imagePath, crop: backgroundCrop, labelOverlay: backgroundLabelOverlay } }
     }
     function placeForeground(x, y) {
@@ -273,7 +315,7 @@ Rectangle {
             var updated = JSON.parse(JSON.stringify(backgroundLibrary))
             for (var i = 0; i < updated.items.length; i++)
                 if (updated.items[i].id === result.id) updated.items[i].crop = result.crop
-            backgroundLibrary = updated
+            installLibrary(updated)
             cropMessage = qsTr("Background framing saved for this image")
             cropSaveFailed = false
             if (Object.keys(cropDrafts).length) cropSave.restart()
@@ -281,13 +323,19 @@ Rectangle {
             return
         }
         if (action === "lock-background" || action === "trash-background" || action === "label-background" || action === "background-overlay") {
+            if(action==="background-overlay" && labelInFlight!==null){
+                var labels=Object.assign({},labelDrafts)
+                if(labels[labelInFlight.path] && labels[labelInFlight.path].generation===labelInFlight.generation)delete labels[labelInFlight.path]
+                labelDrafts=labels;labelInFlight=null;labelSaveFailed=false;labelMessage=qsTr("Label saved")
+                if(Object.keys(labelDrafts).length)labelSave.restart()
+                if(dirty&&!automaticWritesPaused)autosave.restart()
+            }
             var selected = backgroundLibrary.selected
             if (selected && selected.path === imagePath) {
                 var matching = result.items.find(i => i.id === selected.id)
                 if (matching) { result.selected = Object.assign({}, selected, {locked:matching.locked, label:matching.label, overlay:matching.overlay, crop:matching.crop}) }
             }
-            backgroundLibrary = result
-            syncBackgroundOverlay()
+            installLibrary(result)
             if (action === "trash-background") {
                 var currentId = document.profiles[profileIndex].id
                 var recovered = JSON.parse(JSON.stringify(result.document))
@@ -312,8 +360,7 @@ Rectangle {
         }
         if (action === "backgrounds" || action === "add-backgrounds") {
             libraryPending = false
-            if (JSON.stringify(backgroundLibrary) !== JSON.stringify(result)) backgroundLibrary = result
-            syncBackgroundOverlay()
+            if (JSON.stringify(backgroundLibrary) !== JSON.stringify(result)) installLibrary(result)
             if (result.selected && result.selected.path === imagePath && result.selected.hasCrop && !cropDrafts[imagePath]) backgroundCrop = result.selected.crop
             libraryMessage = qsTr("%1 saved backgrounds").arg(result.items.length)
             if (action === "add-backgrounds") {
@@ -394,7 +441,7 @@ Rectangle {
     }
     function exportDraft() {
         if (busy || !document) return null
-        return {schemaVersion: 1, document: draftDocument(), dirty: dirty, crops: cropDrafts}
+        return {schemaVersion: 1, document: draftDocument(), dirty: dirty, crops: cropDrafts, labels:labelDrafts}
     }
     function restoreDraft(snapshot) {
         if (busy || !document || !snapshot || snapshot.schemaVersion !== 1 || !snapshot.document
@@ -406,10 +453,12 @@ Rectangle {
         if (!candidate.crop || !candidate.background || !candidate.source || typeof candidate.name !== "string") return false
         document = snapshot.document
         cropDrafts = snapshot.crops || {}
+        labelDrafts = snapshot.labels || {}
         restore(index)
         dirty = !!snapshot.dirty
         message = dirty ? qsTr("Unsaved adjustments recovered") : qsTr("Profile restored from disk")
         if (Object.keys(cropDrafts).length) cropSave.restart()
+        if (Object.keys(labelDrafts).length) labelSave.restart()
         if (dirty && !automaticWritesPaused) autosave.restart()
         return true
     }
@@ -439,6 +488,7 @@ Rectangle {
         request("save", ["--document", JSON.stringify(next)])
     }
     function fail(message) {
+        if(labelInFlight!==null){labelInFlight=null;labelSaveFailed=true;labelMessage=qsTr("Could not save label: ")+message}
         if (savePending) { savePending = false; saveFailed = true }
         if (cropInFlight !== null) { cropInFlight = null; cropSaveFailed = true; cropMessage = qsTr("Could not save background framing: ") + message }
         if (libraryPending) { libraryPending = false; libraryMessage = message }
@@ -495,6 +545,7 @@ Rectangle {
     MediaDevices { id: devices; onVideoInputsChanged: cameraRefresh.restart() }
     Timer { id: autosave; interval: 750; onTriggered: root.autosaveWhenReady() }
     Timer { id: cropSave; interval: 400; onTriggered: root.flushBackgroundCrop() }
+    Timer { id: labelSave; interval: 400; onTriggered: root.flushLabel() }
     Timer { id: libraryRefresh; interval: 200; onTriggered: root.refreshBackgrounds() }
     Timer { id: cameraRefresh; interval: 200; onTriggered: root.refreshCameraInventory() }
     Loader {
@@ -513,6 +564,8 @@ Rectangle {
         function onSnapshotSaved(result) {
             root.snapshotDirectory = result.path.slice(0, result.path.lastIndexOf("/"))
             root.message = qsTr("Snapshot saved: %1 × %2 · %3").arg(result.width).arg(result.height).arg(result.path)
+            if(result.recentError)root.message+="\n"+result.recentError
+            if(result.mirrorError)root.message+="\n"+result.mirrorError
         }
     }
     ColumnLayout {
@@ -531,7 +584,7 @@ Rectangle {
                 color: root.saveFailed ? "#f1b58a" : root.accent
                 Layout.preferredWidth: Math.min(160, implicitWidth)
             }
-            Button { visible: root.saveFailed; text: qsTr("Retry"); enabled: !root.busy; onClicked: root.save() }
+            Button { visible:root.saveFailed||root.labelSaveFailed; text:qsTr("Retry"); enabled:!root.busy; onClicked:{if(root.labelSaveFailed){root.labelSaveFailed=false;root.flushLabel()}else root.save()} }
             Button { text: qsTr("Reload saved"); enabled: !root.busy; onClicked: root.dirty ? discardDialog.open() : root.request("read", []) }
             Item { Layout.fillWidth: true }
             Button { text: qsTr("Remote cameras"); enabled: !root.busy; onClicked: root.request("remote", []) }
@@ -623,7 +676,7 @@ Rectangle {
                     Layout.fillWidth: true
                     Layout.preferredHeight: Math.min(width * 9 / 16, Math.max(90, editorScroll.availableHeight
                         - pageIntro.implicitHeight - profileRow.implicitHeight - cameraSelectorRow.implicitHeight
-                        - framingGuide.implicitHeight - zoomControls.implicitHeight - mirrorControl.implicitHeight
+                        - framingGuide.implicitHeight - cropTool.implicitHeight - mirrorControl.implicitHeight - labelControls.implicitHeight
                         - captureInfo.implicitHeight - 98))
                     Rectangle {
                     id: stage
@@ -635,9 +688,11 @@ Rectangle {
                     Image {
                         id: backgroundImage
                         objectName: "backgroundImage"
-                        anchors.fill: parent
+                        property real cover: implicitWidth>0&&implicitHeight>0 ? Math.max(stage.width/implicitWidth,stage.height/implicitHeight)*root.backgroundCrop.zoom : 1
+                        width:implicitWidth*cover; height:implicitHeight*cover
+                        x:stage.width/2-root.backgroundCrop.centerX*width; y:stage.height/2-root.backgroundCrop.centerY*height
                         source: root.backgroundMode === "image" ? root.backgroundUrl(root.imagePath) : ""
-                        fillMode: Image.PreserveAspectCrop
+                        fillMode: Image.PreserveAspectFit
                         asynchronous: true
                         autoTransform: true
                         sourceSize.width: 1280
@@ -678,14 +733,15 @@ Rectangle {
                         source: processor.item ? processor.item.frameUrl : ""
                         onFrameDecoded: fpsBadge.frameReady()
                     }
-                    BackgroundLabelOverlay { anchors.fill: parent; overlay: root.backgroundLabelOverlay; visible: !root.previewOn && root.backgroundMode === "image" && !!overlay.enabled }
-                    FpsIndicator {
-                        id: fpsBadge
-                        anchors.right: parent.right; anchors.top: parent.top; anchors.margins: 10
-                        active: root.previewOn
+                    Column {
+                        anchors.right:parent.right;anchors.top:parent.top;anchors.margins:10
+                        spacing:4
+                        FpsIndicator {id:fpsBadge;active:root.previewOn;anchors.right:parent.right}
+                        BackendIndicator {visible:root.previewOn;provider:root.captureFormat.provider||"";anchors.right:parent.right}
                     }
                     LabelText {
                         anchors.left: parent.left; anchors.top: parent.top; anchors.margins: 12
+                        visible:stage.width>=380
                         text: root.previewOn ? (processor.item && processor.item.frameUrl !== "" ? qsTr("PROCESSED CAMERA PREVIEW") : qsTr("STARTING CAMERA…")) : qsTr("FRAMING TEST CARD · camera off")
                         font.pixelSize: 10; font.bold: true
                     }
@@ -694,8 +750,15 @@ Rectangle {
                         anchors.fill: parent; preventStealing: true
                         property real startX; property real startY; property real startCX; property real startCY
                         cursorShape: pressed ? Qt.ClosedHandCursor : Qt.OpenHandCursor
-                        onPressed: function(mouse) { startX = mouse.x; startY = mouse.y; startCX = root.foreground.x; startCY = root.foreground.y }
-                        onPositionChanged: function(mouse) { if (pressed) root.placeForeground(startCX + (mouse.x - startX) / stage.width, startCY + (mouse.y - startY) / stage.height) }
+                        onPressed: function(mouse) { startX=mouse.x;startY=mouse.y;startCX=cropTool.target==="background"?root.backgroundCrop.centerX:root.foreground.x;startCY=cropTool.target==="background"?root.backgroundCrop.centerY:root.foreground.y }
+                        onPositionChanged: function(mouse) {
+                            if(!pressed)return
+                            if(cropTool.target==="camera")root.placeForeground(startCX+(mouse.x-startX)/stage.width,startCY+(mouse.y-startY)/stage.height)
+                            else if(!root.backgroundLocked&&root.imageReady){
+                                var ex=stage.width/(2*backgroundImage.width),ey=stage.height/(2*backgroundImage.height)
+                                root.editBackgroundCrop({zoom:root.backgroundCrop.zoom,centerX:Math.max(ex,Math.min(1-ex,startCX-(mouse.x-startX)/backgroundImage.width)),centerY:Math.max(ey,Math.min(1-ey,startCY-(mouse.y-startY)/backgroundImage.height))})
+                            }
+                        }
                         onWheel: function(wheel) {
                             if (!(wheel.modifiers & Qt.ControlModifier)) {
                                 var flick = editorScroll.contentItem
@@ -703,21 +766,54 @@ Rectangle {
                                 flick.contentY = Math.max(0, Math.min(flick.contentHeight - flick.height, flick.contentY + amount))
                                 wheel.accepted = true; return
                             }
-                            root.frame(root.zoom + (wheel.angleDelta.y > 0 ? 0.1 : -0.1), root.centerX, root.centerY); wheel.accepted = true }
+                            cropTool.changeZoom(cropTool.selectedCrop.zoom*(wheel.angleDelta.y>0?1.1:1/1.1)); wheel.accepted=true }
+                    }
+                    EditablePreviewLabel {
+                        id:interactiveLabel
+                        anchors.fill:parent
+                        z:2
+                        overlay:root.backgroundMode==="image"?root.backgroundLabelOverlay:({enabled:false})
+                        bitmapSource:processor.item?processor.item.labelBitmapUrl:""
+                        bitmapKey:processor.item?processor.item.labelBitmapKey:""
+                        bitmapWidth:processor.item?processor.item.labelBitmapWidth:0
+                        bitmapHeight:processor.item?processor.item.labelBitmapHeight:0
+                        frameWidth:root.captureFormat.previewWidth||960
+                        frameHeight:root.captureFormat.previewHeight||540
+                        onChanged:function(patch){root.editLabel(patch)}
+                        onEditingStateChanged:function(active){root.previewLabelEditing=active}
                     }
                 }
                 }
+                LabelControls {
+                    id:labelControls
+                    Layout.fillWidth:true
+                    overlay:root.backgroundLabelOverlay
+                    available:root.backgroundMode==="image"&&root.imageReady
+                    feedback:root.labelMessage
+                    onChanged:function(patch){root.editLabel(patch)}
+                    onEditRequested:interactiveLabel.beginEditing()
+                }
                 LabelText {
                     id: framingGuide
-                    text: qsTr("Drag the image to position yourself anywhere. Use Camera zoom, or Ctrl+scroll, to change framing.")
+                    text: qsTr("Drag yourself to position your image. Choose Crop camera or Crop background below; Ctrl+scroll changes the selected crop.")
                     color: "#a9b4c1"
                     Layout.fillWidth: true
                 }
-                RowLayout {
-                    id: zoomControls
-                    LabelText { text: qsTr("Camera zoom"); Layout.preferredWidth: 95 }
-                    Slider { objectName: "zoomSlider"; Layout.fillWidth: true; from: 1; to: 4; value: root.zoom; stepSize: 0.05; onMoved: root.frame(value, root.centerX, root.centerY) }
-                    Button { text: qsTr("Reset frame"); onClicked: root.resetFrame() }
+                CompositionCropTool {
+                    id:cropTool
+                    Layout.fillWidth:true
+                    cameraCrop:({zoom:root.zoom,centerX:root.centerX,centerY:root.centerY})
+                    backgroundCrop:root.backgroundCrop
+                    mirror:root.mirror
+                    backgroundAvailable:root.backgroundMode==="image"&&root.imageReady
+                    backgroundLocked:root.backgroundLocked
+                    cameraSource:processor.item?processor.item.sourceFrameUrl:""
+                    backgroundSource:root.backgroundUrl(root.imagePath)
+                    compositionSource:processor.item?processor.item.frameUrl:""
+                    labelOverlay:root.backgroundMode==="image"?root.backgroundLabelOverlay:({enabled:false})
+                    feedback:root.cropMessage
+                    onCameraEdited:function(value){root.frame(value.zoom,value.centerX,value.centerY)}
+                    onBackgroundEdited:function(value){root.editBackgroundCrop(value)}
                 }
                 CheckBox {
                     id: mirrorControl
@@ -794,12 +890,12 @@ Rectangle {
                         Layout.preferredWidth: backgroundsPane.width
                         Layout.maximumWidth: Infinity
                         compact: false
-                        availableGridHeight: Math.max(120, Math.min(240, root.height * 0.28))
+                        availableGridHeight: Math.max(120,Math.min(480,root.height-370))
                         library: root.backgroundLibrary
                         watching: root.panelOpen && root.section === "background"
                         selectedPath: root.imagePath
                         busy: root.busy || root.libraryPending
-                        actionsReady: root.cropInFlight === null && Object.keys(root.cropDrafts).length === 0
+                        actionsReady: root.cropInFlight === null && Object.keys(root.cropDrafts).length === 0 && root.labelInFlight===null && Object.keys(root.labelDrafts).length===0
                         onAddRequested: imageDialog.open()
                         onRefreshRequested: root.refreshBackgrounds()
                         onSelected: function(path) { root.chooseBackground(path) }
@@ -807,32 +903,10 @@ Rectangle {
                         onLockRequested: function(image) { root.lockBackground(image) }
                         onTrashRequested: function(image) { root.requestTrash(image) }
                         onLabelRequested: function(image, label) { root.labelBackground(image, label) }
+                        onLabelEditingChanged:function(active){root.galleryLabelEditing=active}
                         onOverlayRequested: function(image, enabled, opacity) { root.overlayBackground(image, enabled, opacity) }
                     }
-                    BackgroundFraming {
-                        id: backgroundFraming
-                        feedback: root.cropMessage
-                        labelOverlay: root.backgroundLabelOverlay
-                        locked: root.backgroundLocked
-                        Layout.fillWidth: true
-                        Layout.alignment: Qt.AlignTop
-                        Layout.minimumWidth: backgroundsPane.columns === 2 ? 280 : 0
-                        visible: root.backgroundMode === "image" && root.imagePath !== ""
-                        maximumPreviewHeight: Math.max(100, Math.min(240, root.height - 530))
-                        imageSource: root.backgroundUrl(root.imagePath)
-                        crop: root.backgroundCrop
-                        onEdited: function(value) { root.editBackgroundCrop(value) }
-                        onPageScrollRequested: function(amount) {
-                            var flick = editorScroll.contentItem
-                            flick.contentY = Math.max(0, Math.min(flick.contentHeight - flick.height, flick.contentY + amount))
-                        }
-                    }
-                }
-                RowLayout {
-                    visible: root.cropMessage !== "" && root.backgroundMode === "image"
-                    Layout.fillWidth: true
-                    LabelText { text: root.cropMessage; color: root.accent; Layout.fillWidth: true }
-                    Button { visible: root.cropSaveFailed; text: qsTr("Retry"); onClicked: root.flushBackgroundCrop() }
+
                 }
                 LabelText { text: root.libraryMessage; visible: text !== ""; color: root.accent; Layout.fillWidth: true }
                 LabelText { objectName: "backgroundFeedback"; visible: root.backgroundMode !== "none"; text: root.backgroundFeedback; color: root.backgroundMode === "image" && !root.imageReady ? "#f1b58a" : root.accent; Layout.fillWidth: true }

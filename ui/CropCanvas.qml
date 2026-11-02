@@ -9,6 +9,7 @@ Rectangle {
     property url imageSource
     property var crop: ({zoom: 1, centerX: 0.5, centerY: 0.5})
     property bool locked: false
+    property real maximumZoom: 32
     readonly property real aspect: 16 / 9
     readonly property rect imageBounds: Qt.rect(photo.x + (photo.width - photo.paintedWidth) / 2,
         photo.y + (photo.height - photo.paintedHeight) / 2, photo.paintedWidth, photo.paintedHeight)
@@ -22,7 +23,7 @@ Rectangle {
     function chooseRect(x, y, width) {
         var b = imageBounds
         if (locked || b.width <= 0 || b.height <= 0) return
-        var w = Math.max(widestCrop / 32, Math.min(widestCrop, width)), h = w / aspect
+        var w = Math.max(widestCrop / maximumZoom, Math.min(widestCrop, width)), h = w / aspect
         x = Math.max(b.x, Math.min(b.x + b.width - w, x))
         y = Math.max(b.y, Math.min(b.y + b.height - h, y))
         edited({zoom: widestCrop / w, centerX: (x + w / 2 - b.x) / b.width, centerY: (y + h / 2 - b.y) / b.height})
@@ -35,7 +36,7 @@ Rectangle {
         if (hx !== 0 && hy !== 0) proposed = Math.max(proposed, start.width + hy * dy * aspect)
         var maxX = hx < 0 ? ax - b.x : hx > 0 ? b.x + b.width - ax : 2 * Math.min(ax - b.x, b.x + b.width - ax)
         var maxY = (hy < 0 ? ay - b.y : hy > 0 ? b.y + b.height - ay : 2 * Math.min(ay - b.y, b.y + b.height - ay)) * aspect
-        var w = Math.max(widestCrop / 32, Math.min(maxX, maxY, proposed)), h = w / aspect
+        var w = Math.max(widestCrop / maximumZoom, Math.min(maxX, maxY, proposed)), h = w / aspect
         chooseRect(hx < 0 ? ax - w : hx > 0 ? ax : ax - w / 2,
             hy < 0 ? ay - h : hy > 0 ? ay : ay - h / 2, w)
     }
@@ -45,6 +46,8 @@ Rectangle {
         anchors.margins: 18
         source: root.imageSource
         asynchronous: true
+        cache: false
+        retainWhileLoading: true
         autoTransform: true
         fillMode: Image.PreserveAspectFit
         sourceSize: Qt.size(2048, 2048)
@@ -68,7 +71,7 @@ Rectangle {
             var w = Math.max(Math.abs(dx), Math.abs(dy) * root.aspect)
             w = Math.min(w, dx < 0 ? start.x - b.x : b.x + b.width - start.x,
                 (dy < 0 ? start.y - b.y : b.y + b.height - start.y) * root.aspect)
-            if (w < root.widestCrop / 32) return
+            if (w < root.widestCrop / root.maximumZoom) return
             root.chooseRect(dx < 0 ? start.x - w : start.x, dy < 0 ? start.y - w / root.aspect : start.y, w)
         }
     }
