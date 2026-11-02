@@ -23,6 +23,12 @@ Scope {
         function setup(): void { panel.openSetup() }
         function backgrounds(): void { panel.openBackgrounds() }
         function camera(): void { panel.openCamera() }
+        function preview(enabled: bool): bool {
+            if(enabled && (!panel.editor.cameraChoiceReady || panel.editor.cameraIndex()<0 || panel.editor.sourceKind!=="local" || (panel.editor.backgroundMode==="image"&&!panel.editor.imageReady)))return false
+            panel.editor.autostartRequested=false
+            panel.editor.previewOn=enabled
+            return true
+        }
         function toggle(): void { root.toggle() }
         function minimize(): void { if (root.opened && !panel.collapsed) panel.toggleCollapse() }
         function prepareUpdate(): string { return JSON.stringify(panel.editor.prepareUpdate()) }
