@@ -38,6 +38,7 @@ def exercise():
  try:
   data=json.loads(ev('JSON.stringify(backgroundLibrary.items)'));second=next(i for i in data if i['name']=='Two.png')
   suffix=second['id'];click('backgroundAction-crop-'+suffix);assert editor.property('imagePath')==second['path']
+  ev('backgroundFraming.closeEditor()');QTest.qWait(200)
   caption=find_visual(editor,'backgroundLabel-'+suffix)
   point=caption.mapToScene(QPointF(caption.width()/2,caption.height()/2)).toPoint()
   QTest.mouseClick(v,Qt.LeftButton,Qt.NoModifier,point);QTest.keyClick(v,Qt.Key_A,Qt.ControlModifier)
@@ -45,6 +46,15 @@ def exercise():
   QTest.keyClick(v,Qt.Key_Return);app.processEvents()
   data=json.loads(ev('JSON.stringify(backgroundLibrary.items)'));assert next(i for i in data if i['id']==suffix)['label']=='Blue sky'
   assert Path(second['path']).exists() and next(i for i in data if i['id']==suffix)['name']==second['name']
+  click('showBackgroundLabel-'+suffix)
+  assert ev('backgroundLabelOverlay.enabled') and ev('backgroundLabelOverlay.opacity')==.75
+  assert ev('backgroundLabelOverlay.text')=='Blue sky'
+  click('backgroundLabelOpacityButton-'+suffix);QTest.qWait(100)
+  slider=find_visual(v.contentItem(),'backgroundLabelOpacity-'+suffix);assert slider
+  start=slider.mapToScene(QPointF(slider.width()*.75,slider.height()/2)).toPoint()
+  end=slider.mapToScene(QPointF(slider.width()*.35,slider.height()/2)).toPoint()
+  QTest.mousePress(v,Qt.LeftButton,Qt.NoModifier,start);QTest.mouseMove(v,end,50);QTest.mouseRelease(v,Qt.LeftButton,Qt.NoModifier,end);QTest.qWait(500)
+  assert .2<ev('backgroundLabelOverlay.opacity')<.5
   click('backgroundAction-lock-'+suffix);assert ev('backgroundLocked')
   assert not editor.findChild(QObject,'backgroundZoom').property('enabled')
   assert not find_visual(editor,'backgroundAction-trash-'+suffix).property('enabled')

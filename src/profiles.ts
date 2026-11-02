@@ -17,7 +17,8 @@ export const profileSchema = z.object({
     .refine(c => c.centerX >= 0.5 / c.zoom && c.centerX <= 1 - 0.5 / c.zoom
       && c.centerY >= 0.5 / c.zoom && c.centerY <= 1 - 0.5 / c.zoom, 'Crop must stay inside the source frame'),
   background: z.object({ mode: z.enum(['none', 'blur', 'image']), imagePath: z.string().max(4096),
-    crop: z.object({ zoom: z.number().finite().min(1).max(4), centerX: unit, centerY: unit }).strict().optional(),
+    crop: z.object({ zoom: z.number().finite().min(1).max(32), centerX: unit, centerY: unit }).strict().optional(),
+    labelOverlay: z.object({ enabled: z.boolean(), opacity: unit, text: z.string().max(256).regex(/^[^\u0000-\u001f\u007f]*$/) }).strict().optional(),
   }).strict(),
   foreground: z.object({ x: z.number().finite().min(-1).max(1), y: z.number().finite().min(-1).max(1) }).strict().optional(),
   mirror: z.boolean().default(true),

@@ -15,6 +15,17 @@ spec.loader.exec_module(preview)
 
 
 class BackgroundTests(unittest.TestCase):
+    def test_label_overlay_opacity_does_not_change_other_pixels_or_source(self):
+        frame = np.full((360,640,3), 30, dtype=np.uint8)
+        spec = {'enabled':True, 'opacity':.75, 'text':'Sunrise ☀'}
+        result = preview.apply_label_overlay(frame,spec)
+        self.assertGreater(int(result[-80:].max()),150)
+        np.testing.assert_array_equal(result[:250],frame[:250])
+        self.assertTrue(np.all(frame==30))
+        weaker = preview.apply_label_overlay(frame,{**spec,'opacity':.25})
+        self.assertLess(float(np.abs(weaker.astype(float)-frame).sum()),float(np.abs(result.astype(float)-frame).sum()))
+        np.testing.assert_array_equal(preview.apply_label_overlay(frame,{**spec,'enabled':False}),frame)
+        np.testing.assert_array_equal(preview.apply_label_overlay(frame,{**spec,'opacity':0}),frame)
     def test_foreground_is_preserved_and_background_is_replaced(self):
         frame = np.full((20, 30, 3), (10, 20, 30), dtype=np.uint8)
         image = np.full((40, 20, 3), (210, 150, 90), dtype=np.uint8)

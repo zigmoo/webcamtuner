@@ -6,6 +6,7 @@ import argparse
 import contextlib
 import importlib.util
 from collections import deque
+from functools import lru_cache
 import base64
 import json
 import math
@@ -21,7 +22,7 @@ from urllib.parse import unquote, urlparse
 import cv2
 import numpy as np
 import onnxruntime as ort
-from PIL import Image, ImageOps
+from PIL import Image, ImageOps, ImageDraw, ImageFont
 
 # Runtime imports must not write into the watched plugin directory.
 sys.dont_write_bytecode = True
@@ -86,9 +87,65 @@ def validate_settings(settings: dict) -> dict:
     bg_crop = background.get("crop", {"zoom": 1, "centerX": 0.5, "centerY": 0.5})
     if not isinstance(bg_crop, dict) or not all(isinstance(bg_crop.get(k), (int, float)) and not isinstance(bg_crop[k], bool) and math.isfinite(bg_crop[k]) for k in ("zoom", "centerX", "centerY")):
         raise ValueError("Invalid background crop")
-    if not 1 <= bg_crop["zoom"] <= 4 or not 0 <= bg_crop["centerX"] <= 1 or not 0 <= bg_crop["centerY"] <= 1:
+    if not 1 <= bg_crop["zoom"] <= 32 or not 0 <= bg_crop["centerX"] <= 1 or not 0 <= bg_crop["centerY"] <= 1:
         raise ValueError("Background crop is outside its limits")
+    overlay = background.get('labelOverlay')
+    if overlay is not None:
+        if not isinstance(overlay, dict) or not isinstance(overlay.get('enabled'), bool) or not isinstance(overlay.get('text'), str) or len(overlay['text']) > 256 or any(ord(c) < 32 or ord(c) == 127 for c in overlay['text']):
+            raise ValueError('Invalid background label overlay')
+        opacity = overlay.get('opacity')
+        if isinstance(opacity, bool) or not isinstance(opacity, (int, float)) or not math.isfinite(opacity) or not 0 <= opacity <= 1:
+            raise ValueError('Invalid background label opacity')
     return settings
+
+
+@lru_cache(maxsize=1)
+def label_font_path():
+    try:
+        result = subprocess.check_output(['fc-match', '-f', '%{file}', 'sans'], text=True, timeout=3)
+        if Path(result).is_file(): return result
+    except (OSError, subprocess.SubprocessError): pass
+    return 'DejaVuSans.ttf'
+
+
+@lru_cache(maxsize=16)
+def label_bitmap(text, width, height):
+    size = max(10, round(height * .034))
+    margin = max(4, round(height * .02))
+    stroke = max(1, round(size / 16))
+    try: font = ImageFont.truetype(label_font_path(), size)
+    except OSError: font = ImageFont.load_default(size=size)
+    available = max(1, width - 2 * margin - 2 * stroke)
+    lines = ['']
+    for character in text:
+        if font.getlength(lines[-1] + character) > available:
+            if len(lines) == 2:
+                while lines[-1] and font.getlength(lines[-1] + '…') > available: lines[-1] = lines[-1][:-1]
+                lines[-1] += '…'
+                break
+            lines.append('')
+        lines[-1] += character
+    text = '\n'.join(lines)
+    bounds = ImageDraw.Draw(Image.new('RGBA', (1,1))).multiline_textbbox((0,0), text, font=font, stroke_width=stroke, spacing=max(2,size//8))
+    tile = Image.new('RGBA', (width, min(height, bounds[3] - bounds[1] + stroke * 2 + margin)))
+    draw = ImageDraw.Draw(tile)
+    draw.multiline_text((margin + stroke, stroke - bounds[1]), text, font=font, fill=(255,255,255,255),
+        stroke_fill=(0,0,0,204), stroke_width=stroke, spacing=max(2, size//8))
+    pixels = np.asarray(tile)
+    return cv2.cvtColor(pixels[...,:3], cv2.COLOR_RGB2BGR), pixels[...,3:4].astype(np.float32) / 255
+
+
+def apply_label_overlay(frame, overlay):
+    """Apply the same output-space label to preview, snapshots and publication frames."""
+    if not overlay or not overlay.get('enabled') or not overlay.get('text') or overlay.get('opacity', .75) <= 0:
+        return frame
+    h,w = frame.shape[:2]
+    color, alpha = label_bitmap(overlay['text'], w, h)
+    alpha = alpha * overlay.get('opacity', .75)
+    result = frame.copy()
+    target = result[h-color.shape[0]:]
+    target[:] = np.clip(color.astype(np.float32) * alpha + target.astype(np.float32) * (1-alpha), 0,255).astype(np.uint8)
+    return result
 
 
 def fit_cover(image: np.ndarray, width: int, height: int) -> np.ndarray:
@@ -282,6 +339,7 @@ def save_processed_snapshot(frame, matte, settings, background):
         full, alpha = placed_foreground(frame, matte, settings['crop'], settings.get('mirror', True), placement, cw, ch)
     if mode != 'none':
         full = composite(full, alpha, mode, background, settings['background'].get('crop'), base)
+    if mode == 'image': full = apply_label_overlay(full, settings['background'].get('labelOverlay'))
     okay, encoded = cv2.imencode('.jpg', full, [cv2.IMWRITE_JPEG_QUALITY, 96])
     if not okay:
         raise ValueError('Snapshot could not be encoded.')
@@ -416,6 +474,7 @@ def run(initial: dict, frame_limit: int = 0) -> None:
                 placement = current.get('foreground', {'x':0, 'y':0})
                 if placement.get('x', 0) or placement.get('y', 0):
                     frame, _ = placed_foreground(full_frame, None, current['crop'], current.get('mirror', True), placement, frame.shape[1], frame.shape[0])
+            if mode == 'image': frame = apply_label_overlay(frame, current['background'].get('labelOverlay'))
             with guard:
                 snapshot = snapshots.pop() if snapshots else None
             if snapshot is not None:

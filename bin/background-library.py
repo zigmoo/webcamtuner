@@ -103,7 +103,7 @@ def validate_crop(crop):
         raise ValueError('Invalid background crop.')
     if any(isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) for v in crop.values()):
         raise ValueError('Invalid background crop.')
-    if not 1 <= crop['zoom'] <= 4 or not 0 <= crop['centerX'] <= 1 or not 0 <= crop['centerY'] <= 1:
+    if not 1 <= crop['zoom'] <= 32 or not 0 <= crop['centerX'] <= 1 or not 0 <= crop['centerY'] <= 1:
         raise ValueError('Background crop is outside its limits.')
     return crop
 
@@ -116,7 +116,7 @@ def crop_file():
 def read_settings():
     path = crop_file()
     if not path.exists():
-        return {'schemaVersion': 1, 'crops': {}, 'locks': {}, 'labels': {}}
+        return {'schemaVersion': 1, 'crops': {}, 'locks': {}, 'labels': {}, 'overlays': {}}
     with path.open('rb') as stream:
         data = stream.read(1048577)
     if len(data) > 1048576:
@@ -134,6 +134,21 @@ def read_settings():
     labels = value.setdefault('labels', {})
     if not isinstance(labels, dict) or any(not re.fullmatch('[a-f0-9]{64}', key) or not isinstance(label, str) or len(label) > 80 or any(ord(c) < 32 for c in label) for key, label in labels.items()):
         raise ValueError('Invalid background labels.')
+    overlays = value.setdefault('overlays', {})
+    if not isinstance(overlays, dict):
+        raise ValueError('Invalid label overlays.')
+    for key, overlay in overlays.items():
+        if not re.fullmatch('[a-f0-9]{64}', key): raise ValueError('Invalid background identity.')
+        validate_overlay(overlay)
+    return value
+
+
+def validate_overlay(value):
+    if not isinstance(value, dict) or set(value) != {'enabled', 'opacity'} or not isinstance(value['enabled'], bool):
+        raise ValueError('Invalid label overlay.')
+    opacity = value['opacity']
+    if isinstance(opacity, bool) or not isinstance(opacity, (int, float)) or not math.isfinite(opacity) or not 0 <= opacity <= 1:
+        raise ValueError('Label opacity must be between 0 and 100%.')
     return value
 
 
@@ -153,7 +168,7 @@ def thumbnail(image, digest, cache):
     return target
 
 
-def entry(path, cache, crops=None, locks=None, labels=None):
+def entry(path, cache, crops=None, locks=None, labels=None, overlays=None):
     # Cache identities by file metadata: polling does not rehash/decode every image.
     before = path.lstat()
     if not stat.S_ISREG(before.st_mode) or before.st_size > MAX_BYTES:
@@ -186,28 +201,29 @@ def entry(path, cache, crops=None, locks=None, labels=None):
         cached = {'stamp': stamp, 'digest': digest}
         atomic_write(index, json.dumps(cached).encode())
     digest = cached['digest']
-    settings = read_settings() if crops is None or locks is None or labels is None else None
+    settings = read_settings() if crops is None or locks is None or labels is None or overlays is None else None
     crops = settings['crops'] if crops is None else crops
     locks = settings['locks'] if locks is None else locks
     labels = settings['labels'] if labels is None else labels
+    overlays = settings['overlays'] if overlays is None else overlays
     return {'id': digest, 'name': display_name(path), 'path': str(path),
-            'thumbnail': (cache / (digest + '.jpg')).as_uri(), 'crop': crops.get(digest, default_crop()), 'locked': locks.get(digest, False), 'label': labels.get(digest, '')}
+            'thumbnail': (cache / (digest + '.jpg')).as_uri(), 'crop': crops.get(digest, default_crop()), 'locked': locks.get(digest, False), 'label': labels.get(digest, ''), 'overlay': overlays.get(digest, {'enabled': False, 'opacity': 0.75})}
 
 
 def listing(selected_path=None):
     library, cache = directories()
     items, failures = [], []
-    settings = read_settings(); crops = settings['crops']; locks = settings['locks']; labels = settings['labels']
+    settings = read_settings(); crops = settings['crops']; locks = settings['locks']; labels = settings['labels']; overlays = settings['overlays']
     images = files(library)
     for path in images[:MAX_IMAGES]:
         try:
-            items.append(entry(path, cache, crops, locks, labels))
+            items.append(entry(path, cache, crops, locks, labels, overlays))
         except (OSError, ValueError, Image.DecompressionBombError, Image.DecompressionBombWarning):
             failures.append(display_name(path))
     result = {'directory': str(library), 'items': items, 'unreadable': failures, 'limited': len(images) > MAX_IMAGES}
     if selected_path:
         try:
-            selected = entry(local_path(selected_path), cache, crops, locks, labels)
+            selected = entry(local_path(selected_path), cache, crops, locks, labels, overlays)
             selected['hasCrop'] = selected['id'] in crops
             result['selected'] = selected
         except (OSError, ValueError, Image.DecompressionBombError, Image.DecompressionBombWarning):
@@ -294,6 +310,25 @@ def label_image(value, expected_id, label):
     return listing()
 
 
+def overlay_image(value, expected_id, overlay):
+    validate_overlay(overlay)
+    _, image = managed_image(value, expected_id)
+    settings = crop_file(); settings.parent.mkdir(parents=True, mode=0o700, exist_ok=True)
+    fd = os.open(str(settings) + '.lock', os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        document = read_settings()
+        if image['id'] not in document['overlays'] and len(document['overlays']) >= MAX_IMAGES:
+            raise ValueError('Label overlay settings are full.')
+        document['overlays'][image['id']] = overlay
+        atomic_write(settings, (json.dumps(document) + '\n').encode())
+        if read_settings()['overlays'].get(image['id']) != overlay:
+            raise ValueError('Label overlay could not be verified.')
+    finally:
+        os.close(fd)
+    return listing()
+
+
 def trash_image(value, expected_id, keep_paths):
     path, image = managed_image(value, expected_id)
     if not isinstance(keep_paths, list) or len(keep_paths) > 30 or any(not isinstance(p, str) for p in keep_paths):
@@ -322,6 +357,7 @@ def trash_image(value, expected_id, keep_paths):
             document['crops'].pop(image['id'], None)
             document['locks'].pop(image['id'], None)
             document['labels'].pop(image['id'], None)
+            document['overlays'].pop(image['id'], None)
             atomic_write(settings, (json.dumps(document) + '\n').encode())
             (cache / (image['id'] + '.jpg')).unlink(missing_ok=True)
         (cache / ('file-' + hashlib.sha256(str(path).encode()).hexdigest() + '.json')).unlink(missing_ok=True)
@@ -385,13 +421,14 @@ def add(values):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=['list', 'add', 'crop', 'lock', 'trash', 'inspect', 'label'])
+    parser.add_argument('action', choices=['list', 'add', 'crop', 'lock', 'trash', 'inspect', 'label', 'overlay'])
     parser.add_argument('--paths', default='[]')
     parser.add_argument('--path')
     parser.add_argument('--crop')
     parser.add_argument('--selected-path')
     parser.add_argument('--id')
     parser.add_argument('--label', default='')
+    parser.add_argument('--overlay')
     parser.add_argument('--locked', choices=['true', 'false'])
     parser.add_argument('--keep-paths', default='[]')
     args = parser.parse_args()
@@ -402,6 +439,8 @@ def main():
             result = lock_image(args.path, args.id, args.locked == 'true')
         elif args.action == 'label':
             result = label_image(args.path, args.id, args.label)
+        elif args.action == 'overlay':
+            result = overlay_image(args.path, args.id, json.loads(args.overlay))
         elif args.action == 'trash':
             result = trash_image(args.path, args.id, json.loads(args.keep_paths))
         elif args.action == 'crop':

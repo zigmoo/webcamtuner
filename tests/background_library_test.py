@@ -182,6 +182,23 @@ class LibraryTests(unittest.TestCase):
             else:
                 self.assertEqual(len(library.add(values)['errors']), 1)
 
+    def test_overlay_visibility_opacity_and_small_crops_are_saved_per_image(self):
+        image = library.add([str(self.source)])['added'][0]
+        self.assertEqual(image['overlay'], {'enabled': False, 'opacity': .75})
+        overlay = {'enabled': True, 'opacity': .4}
+        library.overlay_image(image['path'], image['id'], overlay)
+        library.label_image(image['path'], image['id'], 'Morning light')
+        crop = {'zoom': 12, 'centerX': .7, 'centerY': .4}
+        library.save_crop(image['path'], crop)
+        item = library.listing()['items'][0]
+        self.assertEqual(item['overlay'], overlay)
+        self.assertEqual(item['label'], 'Morning light')
+        self.assertEqual(item['crop'], crop)
+        for value in ({'enabled': 1, 'opacity': .75}, {'enabled': True, 'opacity': float('nan')}, {'enabled': True, 'opacity': -1}):
+            with self.assertRaises(ValueError): library.overlay_image(image['path'], image['id'], value)
+        library.trash_image(image['path'], image['id'], [])
+        self.assertNotIn(image['id'], library.read_settings()['overlays'])
+
 
 if __name__ == '__main__':
     unittest.main()

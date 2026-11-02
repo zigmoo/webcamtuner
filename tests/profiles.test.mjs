@@ -29,6 +29,20 @@ test('an old panel cannot overwrite a newer profile', t => {
   assert.throws(() => saveStore(original, path), /another panel/)
   assert.equal(readFileSync(path, 'utf8'), before)
 })
+test('small background crops and optional overlays round-trip without changing camera limits', t => {
+  const path = fixture(t), store = defaults()
+  store.profiles[0].background = { mode: 'image', imagePath: '/private/background.png',
+    crop: { zoom: 12, centerX: .7, centerY: .4 }, labelOverlay: {enabled:true,opacity:.75,text:'Sunrise ☀'} }
+  const saved = saveStore(store, path)
+  assert.deepEqual(readStore(path).profiles[0].background, saved.profiles[0].background)
+  for (const opacity of [-.1, 1.1, NaN]) {
+    const invalid = structuredClone(saved); invalid.profiles[0].background.labelOverlay.opacity = opacity
+    assert.throws(() => saveStore(invalid,path))
+  }
+  const invalid = structuredClone(saved); invalid.profiles[0].crop.zoom = 12
+  assert.throws(() => saveStore(invalid,path))
+  assert.deepEqual(readStore(path), saved)
+})
 test('old profiles adopt mirror and autostart defaults; explicit disabled settings survive reload', t => {
   const path = fixture(t), old = defaults()
   delete old.profiles[0].mirror

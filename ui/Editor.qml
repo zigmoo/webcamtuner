@@ -44,6 +44,7 @@ Rectangle {
     property string backgroundMode: "none"
     property string imagePath: ""
     property var backgroundCrop: ({zoom: 1, centerX: 0.5, centerY: 0.5})
+    property var backgroundLabelOverlay: ({enabled: false, opacity: 0.75, text: ""})
     property var cropDrafts: ({})
     property var cropInFlight: null
     property string cropMessage: ""
@@ -118,7 +119,8 @@ Rectangle {
     }
     function autosaveWhenReady() {
         if (!dirty || automaticWritesPaused || saveFailed || !document) return
-        if (busy || savePending || cameraPending || mirrorPending || autostartPending || cropInFlight !== null) { autosave.restart(); return }
+        if (cropSaveFailed) return
+        if (busy || savePending || cameraPending || mirrorPending || autostartPending || cropInFlight !== null || Object.keys(cropDrafts).length) { autosave.restart(); return }
         if (!profileName.trim() || (backgroundMode === "image" && !imageReady)) return
         save()
     }
@@ -144,10 +146,25 @@ Rectangle {
     }
     function chooseBackground(path) {
         if (path.indexOf("file:///") === 0) path = decodeURIComponent(path.slice(7))
-        if (imagePath !== path) backgroundCrop = cropFor(path)
+        if (imagePath !== path) {
+            backgroundCrop = cropFor(path)
+            backgroundLabelOverlay = {enabled:false, opacity:0.75, text:""}
+        }
         imagePath = path
         backgroundMode = "image"
+        syncBackgroundOverlay()
         mark()
+    }
+    function syncBackgroundOverlay() {
+        var item = backgroundLibrary.items.find(i => i.path === imagePath)
+        if (!item && backgroundLibrary.selected && backgroundLibrary.selected.path === imagePath) item = backgroundLibrary.selected
+        if (!item) return
+        var setting = item.overlay || {enabled: false, opacity: 0.75}
+        var next = {enabled: !!setting.enabled, opacity: setting.opacity, text: (item.label || item.name).replace(/[\u0000-\u001f\u007f]/g, " ").slice(0,256)}
+        if (JSON.stringify(next) !== JSON.stringify(backgroundLabelOverlay)) {
+            backgroundLabelOverlay = next
+            if (document && backgroundMode === "image") mark()
+        }
     }
     function cropFor(path, fallback) {
         if (cropDrafts[path]) return cropDrafts[path]
@@ -177,6 +194,7 @@ Rectangle {
     }
     function cropBackground(image) {
         chooseBackground(image.path)
+        backgroundFraming.openEditor()
         Qt.callLater(function() {
             var y = backgroundFraming.mapToItem(editorScroll.contentItem.contentItem, 0, 0).y
             var flick = editorScroll.contentItem
@@ -188,6 +206,7 @@ Rectangle {
         request("lock-background", ["--path", image.path, "--id", image.id, "--locked", String(!image.locked)])
     }
     function labelBackground(image, label) { request("label-background", ["--path", image.path, "--id", image.id, "--label", label]) }
+    function overlayBackground(image, enabled, opacity) { request("background-overlay", ["--path", image.path, "--id", image.id, "--overlay", JSON.stringify({enabled: enabled, opacity: opacity})]) }
     function requestTrash(image) {
         trashCandidate = image
         var referenced = document && document.profiles.some(p => p.background.mode === "image" && p.background.imagePath === image.path)
@@ -213,7 +232,7 @@ Rectangle {
     function previewSettings() {
         if (backgroundMode === "image" && !imageReady) return null
         return { camera: savedCamera, mirror: mirror, foreground: foreground, crop: { zoom: zoom, centerX: centerX, centerY: centerY },
-            background: { mode: backgroundMode, imagePath: imagePath, crop: backgroundCrop } }
+            background: { mode: backgroundMode, imagePath: imagePath, crop: backgroundCrop, labelOverlay: backgroundLabelOverlay } }
     }
     function placeForeground(x, y) {
         foreground = {x: Math.max(-1, Math.min(1, x)), y: Math.max(-1, Math.min(1, y))}
@@ -236,11 +255,13 @@ Rectangle {
         foreground = p.foreground || {x:0, y:0}
         profileName = p.name; backgroundMode = p.background.mode; imagePath = p.background.imagePath
         backgroundCrop = cropFor(imagePath, p.background.crop)
+        backgroundLabelOverlay = p.background.labelOverlay || {enabled: false, opacity: 0.75, text: ""}
         savedCamera = p.source.camera; sourceHost = p.source.host; sourceKind = p.source.kind
         restoreOnStart = p.restoreOnStart
         mirror = p.mirror === undefined ? true : p.mirror
         autostartCamera = p.autostartCamera === undefined ? true : p.autostartCamera
         dirty = false
+        syncBackgroundOverlay()
         if (cameraChoiceReady) chooseCamera()
     }
     function accept(action, result) {
@@ -256,15 +277,17 @@ Rectangle {
             cropMessage = qsTr("Background framing saved for this image")
             cropSaveFailed = false
             if (Object.keys(cropDrafts).length) cropSave.restart()
+            else if (dirty && !automaticWritesPaused) autosave.restart()
             return
         }
-        if (action === "lock-background" || action === "trash-background" || action === "label-background") {
+        if (action === "lock-background" || action === "trash-background" || action === "label-background" || action === "background-overlay") {
             var selected = backgroundLibrary.selected
             if (selected && selected.path === imagePath) {
                 var matching = result.items.find(i => i.id === selected.id)
-                if (matching) { selected.locked = matching.locked; result.selected = selected }
+                if (matching) { result.selected = Object.assign({}, selected, {locked:matching.locked, label:matching.label, overlay:matching.overlay, crop:matching.crop}) }
             }
             backgroundLibrary = result
+            syncBackgroundOverlay()
             if (action === "trash-background") {
                 var currentId = document.profiles[profileIndex].id
                 var recovered = JSON.parse(JSON.stringify(result.document))
@@ -284,12 +307,13 @@ Rectangle {
                 libraryMessage = qsTr("Image moved to your Trash")
                 if (result.cleanupWarning) libraryMessage += "\n" + result.cleanupWarning
                 trashCandidate = null
-            } else libraryMessage = action === "label-background" ? qsTr("Background label saved") : qsTr("Background lock saved and verified")
+            } else libraryMessage = action === "background-overlay" ? qsTr("Label overlay saved and verified") : action === "label-background" ? qsTr("Background label saved") : qsTr("Background lock saved and verified")
             return
         }
         if (action === "backgrounds" || action === "add-backgrounds") {
             libraryPending = false
             if (JSON.stringify(backgroundLibrary) !== JSON.stringify(result)) backgroundLibrary = result
+            syncBackgroundOverlay()
             if (result.selected && result.selected.path === imagePath && result.selected.hasCrop && !cropDrafts[imagePath]) backgroundCrop = result.selected.crop
             libraryMessage = qsTr("%1 saved backgrounds").arg(result.items.length)
             if (action === "add-backgrounds") {
@@ -360,7 +384,7 @@ Rectangle {
         p.name = profileName
         p.crop = { zoom: zoom, centerX: centerX, centerY: centerY }
         p.foreground = foreground
-        p.background = { mode: backgroundMode, imagePath: imagePath, crop: backgroundCrop }
+        p.background = { mode: backgroundMode, imagePath: imagePath, crop: backgroundCrop, labelOverlay: backgroundLabelOverlay }
         p.source = { kind: sourceKind, host: sourceHost, camera: savedCamera }
         p.restoreOnStart = restoreOnStart
         p.mirror = mirror
@@ -654,6 +678,7 @@ Rectangle {
                         source: processor.item ? processor.item.frameUrl : ""
                         onFrameDecoded: fpsBadge.frameReady()
                     }
+                    BackgroundLabelOverlay { anchors.fill: parent; overlay: root.backgroundLabelOverlay; visible: !root.previewOn && root.backgroundMode === "image" && !!overlay.enabled }
                     FpsIndicator {
                         id: fpsBadge
                         anchors.right: parent.right; anchors.top: parent.top; anchors.margins: 10
@@ -782,9 +807,12 @@ Rectangle {
                         onLockRequested: function(image) { root.lockBackground(image) }
                         onTrashRequested: function(image) { root.requestTrash(image) }
                         onLabelRequested: function(image, label) { root.labelBackground(image, label) }
+                        onOverlayRequested: function(image, enabled, opacity) { root.overlayBackground(image, enabled, opacity) }
                     }
                     BackgroundFraming {
                         id: backgroundFraming
+                        feedback: root.cropMessage
+                        labelOverlay: root.backgroundLabelOverlay
                         locked: root.backgroundLocked
                         Layout.fillWidth: true
                         Layout.alignment: Qt.AlignTop

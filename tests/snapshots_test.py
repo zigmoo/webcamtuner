@@ -48,6 +48,16 @@ class SnapshotTests(unittest.TestCase):
         two=preview.save_processed_snapshot(frame,None,settings,None)
         self.assertNotEqual(one['path'],two['path'])
         self.assertTrue(Path(one['path']).exists() and Path(two['path']).exists())
+    def test_snapshot_includes_enabled_label_at_requested_opacity(self):
+        frame=np.zeros((360,640,3),dtype=np.uint8)
+        matte=np.zeros((360,640,1),dtype=np.float32)
+        background=np.full_like(frame,30)
+        settings={'crop':{'zoom':1,'centerX':.5,'centerY':.5},'mirror':True,'background':{'mode':'image','labelOverlay':{'enabled':True,'opacity':.75,'text':'Sunrise'}}}
+        saved=preview.save_processed_snapshot(frame,matte,settings,background)
+        with Image.open(saved['path']) as photo:
+            pixels=np.asarray(photo)
+            self.assertLess(abs(int(pixels[20,20,0])-30),3)
+            self.assertGreater(int(pixels[-60:].max()),150)
     def test_effect_snapshot_does_not_fall_back_to_unprocessed_frame(self):
         settings={'crop':{'zoom':1,'centerX':.5,'centerY':.5},'mirror':True,'background':{'mode':'image'}}
         with self.assertRaises(ValueError):preview.save_processed_snapshot(np.zeros((90,160,3),np.uint8),None,settings,None)
