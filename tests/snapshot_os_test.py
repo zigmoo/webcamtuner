@@ -15,6 +15,15 @@ class SnapshotOS(unittest.TestCase):
  def test_os_config_and_environment_precedence(self):
   self.assertEqual(snapshots.os_directory(False),self.root/'OS shots')
   os.environ['OMASNAP_SCREENSHOT_DIR']=str(self.root/'Env shots');self.assertEqual(snapshots.os_directory(False),self.root/'Env shots')
+ def test_native_qt_recent_directory_includes_the_organization(self):
+  from PySide6.QtCore import QCoreApplication,QStandardPaths
+  app=QCoreApplication.instance() or QCoreApplication(['omasnap'])
+  app.setApplicationName('omasnap');app.setOrganizationName('Omarchy')
+  os.environ['XDG_STATE_HOME']=str(self.root/'state');os.environ.pop('OMASNAP_RECENT_DIR',None)
+  expected=Path(QStandardPaths.writableLocation(QStandardPaths.StateLocation))/'recent'
+  data=io.BytesIO();Image.new('RGB',(80,60),'blue').save(data,'JPEG');path=snapshots.save(data.getvalue())
+  result=snapshots.mirror_snapshot(path);self.assertNotIn('recentError',result)
+  self.assertEqual(Path(result['recentThumbnail']).parent,expected)
  def test_newest_private_recent_document_reopens_the_saved_pixels(self):
   data=io.BytesIO();Image.new('RGB',(640,360),'#246080').save(data,'JPEG')
   path=snapshots.save(data.getvalue());self.assertEqual(path.parent,self.root/'data/webcamtuner/snapshots')

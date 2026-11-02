@@ -104,7 +104,7 @@ def record_recent(path):
         version = subprocess.check_output(['omasnap','--version'],text=True,timeout=3).strip()
         if not version.startswith('omasnap 1.24.'):
             return {'recentError':'Snapshot saved; this Omasnap version does not support the verified recent-images adapter.'}
-        root = Path(os.environ.get('OMASNAP_RECENT_DIR') or Path(os.environ.get('XDG_STATE_HOME') or Path.home()/'.local/state')/'omasnap/recent')
+        root = Path(os.environ.get('OMASNAP_RECENT_DIR') or Path(os.environ.get('XDG_STATE_HOME') or Path.home()/'.local/state')/'Omarchy/omasnap/recent')
         root.mkdir(parents=True,exist_ok=True,mode=0o700)
         if root.is_symlink() or root.stat().st_uid != os.getuid(): raise ValueError('Recent-images folder is not user-owned.')
         root.chmod(0o700)
