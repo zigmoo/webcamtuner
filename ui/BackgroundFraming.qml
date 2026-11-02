@@ -4,9 +4,11 @@ import QtQuick.Layouts
 
 ColumnLayout {
     id: root
+    property real maximumPreviewHeight: 240
     property url imageSource
     property var crop: ({zoom: 1, centerX: 0.5, centerY: 0.5})
     signal edited(var value)
+    signal pageScrollRequested(real amount)
     function adjust(zoom, x, y) {
         zoom = Math.max(1, Math.min(4, zoom))
         var iw = backdrop.implicitWidth, ih = backdrop.implicitHeight
@@ -16,10 +18,22 @@ ColumnLayout {
         edited({zoom: zoom, centerX: Math.max(ex, Math.min(1 - ex, x)), centerY: Math.max(ey, Math.min(1 - ey, y))})
     }
     Label { text: qsTr("Background framing"); textFormat: Text.PlainText; color: "#e9ecef"; font.bold: true }
-    Rectangle {
-        id: stage
+    Label { text: qsTr("Drag the image to choose its framing. Use Background zoom, or Ctrl+scroll to zoom. Each image remembers its framing."); textFormat: Text.PlainText; wrapMode: Text.WordWrap; color: "#a9b4c1"; Layout.fillWidth: true }
+    RowLayout {
         Layout.fillWidth: true
-        Layout.preferredHeight: width * 9 / 16
+        Label { text: qsTr("Background zoom"); textFormat: Text.PlainText; color: "#e9ecef" }
+        Slider { objectName: "backgroundZoom"; Layout.fillWidth: true; from: 1; to: 4; value: root.crop.zoom; onMoved: root.adjust(value, root.crop.centerX, root.crop.centerY) }
+        Button { text: qsTr("Reset"); onClicked: root.adjust(1, 0.5, 0.5) }
+    }
+    Item {
+        Layout.fillWidth: true
+        Layout.preferredHeight: Math.min(width * 9 / 16, root.maximumPreviewHeight)
+        Rectangle {
+        id: stage
+        objectName: "backgroundPreviewStage"
+        anchors.centerIn: parent
+        width: Math.min(parent.width, parent.height * 16 / 9)
+        height: width * 9 / 16
         color: "#0e131b"
         clip: true
         Image {
@@ -37,6 +51,7 @@ ColumnLayout {
             y: stage.height / 2 - root.crop.centerY * height
         }
         MouseArea {
+            objectName: "backgroundDragSurface"
             anchors.fill: parent
             preventStealing: true
             cursorShape: pressed ? Qt.ClosedHandCursor : Qt.OpenHandCursor
@@ -45,14 +60,14 @@ ColumnLayout {
             onPositionChanged: function(mouse) {
                 if (pressed) root.adjust(root.crop.zoom, centerX - (mouse.x - startX) / backdrop.width, centerY - (mouse.y - startY) / backdrop.height)
             }
-            onWheel: function(wheel) { root.adjust(root.crop.zoom + (wheel.angleDelta.y > 0 ? 0.1 : -0.1), root.crop.centerX, root.crop.centerY); wheel.accepted = true }
+            onWheel: function(wheel) {
+                if (!(wheel.modifiers & Qt.ControlModifier)) {
+                    root.pageScrollRequested(wheel.pixelDelta.y ? -wheel.pixelDelta.y : -wheel.angleDelta.y / 120 * 64)
+                    wheel.accepted = true
+                    return
+                }
+                root.adjust(root.crop.zoom + (wheel.angleDelta.y > 0 ? 0.1 : -0.1), root.crop.centerX, root.crop.centerY); wheel.accepted = true }
         }
     }
-    Label { text: qsTr("Drag to choose the background area. Scroll or use Background zoom. Each image remembers its framing."); textFormat: Text.PlainText; wrapMode: Text.WordWrap; color: "#a9b4c1"; Layout.fillWidth: true }
-    RowLayout {
-        Layout.fillWidth: true
-        Label { text: qsTr("Background zoom"); textFormat: Text.PlainText; color: "#e9ecef" }
-        Slider { objectName: "backgroundZoom"; Layout.fillWidth: true; from: 1; to: 4; value: root.crop.zoom; onMoved: root.adjust(value, root.crop.centerX, root.crop.centerY) }
-        Button { text: qsTr("Reset"); onClicked: root.adjust(1, 0.5, 0.5) }
     }
 }

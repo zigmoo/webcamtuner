@@ -1,14 +1,18 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import "BuildInfo.js" as BuildInfo
 
 ScrollView {
     id: root
     clip: true
     padding: 22
     contentWidth: availableWidth
-    ScrollBar.vertical: ScrollBar { policy: root.contentHeight > root.availableHeight ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff }
+    contentHeight: aboutContent.implicitHeight
+    ScrollBar.vertical: VisibleScrollBar { policy: root.contentHeight > root.availableHeight ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff }
     ColumnLayout {
+        id: aboutContent
+        height: implicitHeight
         width: root.availableWidth
         spacing: 16
         component Plain: Text { color: "#e9ecef"; textFormat: Text.PlainText; wrapMode: Text.WordWrap; Layout.fillWidth: true; font.pixelSize: 14 }
@@ -16,6 +20,7 @@ ScrollView {
             WebcamIcon { ink: "#93c5aa"; Layout.preferredWidth: 32; Layout.preferredHeight: 32 }
             Plain { text: "WebcamTuner"; font.pixelSize: 24; font.bold: true }
         }
+        Plain { objectName: "pluginVersion"; text: qsTr("Version %1").arg(BuildInfo.version); color: "#93c5aa" }
         Plain { text: qsTr("By Jason Benjamin Ziegler Sr") }
         Plain { text: qsTr("Persistent camera framing and locally processed backgrounds for the Omarchy desktop.") }
         Plain { text: qsTr("How it works"); font.bold: true; font.pixelSize: 18 }

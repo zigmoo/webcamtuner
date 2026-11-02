@@ -6,6 +6,7 @@ python3 -m venv --system-site-packages "$WEBCAMTUNER_GPU_RUNTIME"
 "$WEBCAMTUNER_GPU_RUNTIME/bin/python" -m pip install --only-binary=:all: --disable-pip-version-check 'onnxruntime-gpu[cuda,cudnn]==1.31.0'
 "$WEBCAMTUNER_GPU_RUNTIME/bin/python" - "$WEBCAMTUNER_BIN" "$WEBCAMTUNER_GPU_RUNTIME" <<'PY'
 import importlib.util,json,os,sys
+sys.dont_write_bytecode = True
 from pathlib import Path
 import numpy as np
 root, runtime = Path(sys.argv[1]), Path(sys.argv[2])

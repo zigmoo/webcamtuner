@@ -4,6 +4,7 @@ import Quickshell.Io
 import qs.Ui
 import qs.Commons as Commons
 import "ui" as Tuner
+import "ui/BuildInfo.js" as BuildInfo
 
 BarWidget {
     id: root
@@ -45,7 +46,7 @@ BarWidget {
             catch (e) { return false }
         }
         function status(): string {
-            return JSON.stringify({ opened: root.opened, collapsed: panel.collapsed, width: panel.width, height: panel.height,
+            return JSON.stringify({ version: BuildInfo.version, opened: root.opened, collapsed: panel.collapsed, width: panel.width, height: panel.height,
                 busy: panel.editor.busy, dirty: panel.editor.dirty, message: panel.editor.message,
                 mirror: panel.editor.mirror, autostartCamera: panel.editor.autostartCamera, previewOn: panel.editor.previewOn,
                 draftRecovery: true, revision: panel.editor.document ? panel.editor.document.revision : -1, broadcasting: false })

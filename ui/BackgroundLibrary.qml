@@ -9,14 +9,23 @@ ColumnLayout {
     property var library: ({directory: "", items: []})
     property string selectedPath: ""
     property bool busy: false
+    property bool compact: false
+    property int availableGridHeight: 360
     property bool watching: false
     property int refreshInterval: 15000
     property real previousScroll: 0
     property bool updating: false
+    property bool initiallyPositioned: false
+    function revealSelection() {
+        var index = root.library.items.findIndex(i => i.path === root.selectedPath)
+        if (index >= 0) grid.positionViewAtIndex(index, GridView.Contain)
+    }
+    onSelectedPathChanged: Qt.callLater(revealSelection)
     onLibraryChanged: {
         updating = true
         Qt.callLater(function() {
             grid.contentY = Math.max(0, Math.min(root.previousScroll, grid.contentHeight - grid.height))
+            if (!root.initiallyPositioned && root.library.items.length) { root.revealSelection(); root.initiallyPositioned = true }
             root.updating = false
         })
     }
@@ -41,27 +50,9 @@ ColumnLayout {
     spacing: 10
     RowLayout {
         Layout.fillWidth: true
-        Label { text: qsTr("Saved backgrounds"); textFormat: Text.PlainText; color: "#e9ecef"; font.bold: true; Layout.fillWidth: true }
-        Button { objectName: "addBackgrounds"; text: qsTr("Add images…"); enabled: !root.busy; onClicked: root.addRequested() }
+        Label { text: root.compact ? qsTr("Images") : qsTr("Saved backgrounds"); textFormat: Text.PlainText; color: "#e9ecef"; font.bold: true; Layout.fillWidth: true }
+        Button { objectName: "addBackgrounds"; text: root.compact ? qsTr("Add…") : qsTr("Add images…"); enabled: !root.busy; onClicked: root.addRequested() }
         Button { text: qsTr("Refresh"); enabled: !root.busy; onClicked: root.refreshRequested() }
-    }
-    TextField {
-        objectName: "backgroundLibraryPath"
-        Layout.fillWidth: true
-        readOnly: true
-        selectByMouse: true
-        text: root.library.directory || ""
-        placeholderText: qsTr("Loading background folder…")
-        Accessible.name: qsTr("Background storage folder")
-    }
-    RowLayout {
-        Layout.fillWidth: true
-        Label { text: qsTr("Added images are copied here. Your originals stay in place."); textFormat: Text.PlainText; color: "#a9b4c1"; wrapMode: Text.WordWrap; Layout.fillWidth: true }
-        Button {
-            text: qsTr("Open folder")
-            enabled: !!root.library.directory
-            onClicked: Qt.openUrlExternally("file://" + root.library.directory.split("/").map(encodeURIComponent).join("/"))
-        }
     }
     Label {
         visible: root.library.items.length === 0
@@ -77,7 +68,7 @@ ColumnLayout {
         onContentYChanged: if (!root.updating) root.previousScroll = contentY
         visible: root.library.items.length > 0
         Layout.fillWidth: true
-        Layout.preferredHeight: Math.min(360, contentHeight)
+        Layout.preferredHeight: Math.min(root.availableGridHeight, contentHeight)
         clip: true
         model: root.library.items
         cellWidth: width / Math.max(1, Math.floor(width / 150))
@@ -85,7 +76,7 @@ ColumnLayout {
         boundsBehavior: Flickable.StopAtBounds
         keyNavigationEnabled: true
         activeFocusOnTab: true
-        ScrollBar.vertical: ScrollBar { policy: grid.contentHeight > grid.height ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff }
+        ScrollBar.vertical: VisibleScrollBar { policy: grid.contentHeight > grid.height ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff }
         delegate: ItemDelegate {
             required property var modelData
             width: grid.cellWidth - 8

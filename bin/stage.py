@@ -2,10 +2,13 @@
 """Build a dependency-free plugin directory; npm symlinks cannot ship in Omarchy plugins."""
 from pathlib import Path
 import shutil
+import json
 
 root = Path(__file__).resolve().parent.parent
 target = root / "package" / "moo.webcamtuner"
 target.mkdir(parents=True, exist_ok=True)
+version = json.loads((root / "manifest.json").read_text())["version"]
+(root / "ui" / "BuildInfo.js").write_text(".pragma library\n// Generated from manifest.json by stage.py.\nvar version = " + json.dumps(version) + ";\n")
 for filename in ("manifest.json", "BarWidget.qml", "Preview.qml"):
     shutil.copy2(root / filename, target / filename)
 shutil.copytree(root / "ui", target / "ui", dirs_exist_ok=True)

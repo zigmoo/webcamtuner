@@ -380,19 +380,48 @@ Rectangle {
             root.message = qsTr("Snapshot saved: %1 × %2 · %3").arg(result.width).arg(result.height).arg(result.path)
         }
     }
+    ColumnLayout {
+        id: footer
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        anchors.margins: 22
+        height: implicitHeight
+        spacing: 6
+        RowLayout {
+            id: profileActions
+            Button { objectName: "saveButton"; text: root.busy ? qsTr("Working…") : qsTr("Save profile"); highlighted: true; enabled: root.document !== null && root.dirty && !root.busy && root.profileName.trim() !== "" && (root.backgroundMode !== "image" || root.imageReady); onClicked: root.save() }
+            Button { text: qsTr("Reload saved"); enabled: !root.busy; onClicked: root.dirty ? discardDialog.open() : root.request("read", []) }
+            Item { Layout.fillWidth: true }
+            Button { text: qsTr("Remote cameras"); enabled: !root.busy; onClicked: root.request("remote", []) }
+        }
+        LabelText { id: saveStatus; objectName: "saveStatus"; text: root.message; color: root.accent; Layout.fillWidth: true; maximumLineCount: 3; elide: Text.ElideRight }
+        LabelText { visible: root.remoteSummary !== ""; text: root.remoteSummary; Layout.fillWidth: true; font.pixelSize: 12 }
+    }
     ScrollView {
         id: editorScroll
         objectName: "editorScroll"
-        anchors.fill: parent
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: parent.top
+        anchors.bottom: footer.top
         anchors.margins: 22
         clip: true
+        rightPadding: 16
         contentWidth: availableWidth
-        ScrollBar.vertical: ScrollBar {
+        contentHeight: editorContent.implicitHeight
+        ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+        ScrollBar.vertical: VisibleScrollBar {
+            ink: root.accent
             objectName: "editorScrollbar"
+            width: 12
+            active: true
             policy: editorScroll.contentHeight > editorScroll.availableHeight ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
         }
         ColumnLayout {
-            width: parent.width
+            id: editorContent
+            width: editorScroll.availableWidth
+            height: implicitHeight
             spacing: 14
             LabelText { id: pageIntro; text: qsTr("Frame your camera. Choose a background. Save your look."); color: "#a9b4c1"; Layout.fillWidth: true }
             RowLayout {
@@ -450,7 +479,7 @@ Rectangle {
                     Layout.preferredHeight: Math.min(width * 9 / 16, Math.max(90, editorScroll.availableHeight
                         - pageIntro.implicitHeight - profileRow.implicitHeight - cameraSelectorRow.implicitHeight
                         - framingGuide.implicitHeight - zoomControls.implicitHeight - mirrorControl.implicitHeight
-                        - captureInfo.implicitHeight - profileActions.implicitHeight - saveStatus.implicitHeight - 126))
+                        - captureInfo.implicitHeight - 98))
                     Rectangle {
                     id: stage
                     anchors.centerIn: parent
@@ -572,22 +601,58 @@ Rectangle {
                     }
                     Button { text: qsTr("Add this image"); enabled: !root.busy && !root.libraryPending && root.imagePath !== ""; onClicked: root.addBackgrounds([root.imagePath]) }
                 }
-                BackgroundLibrary {
+                RowLayout {
                     Layout.fillWidth: true
-                    library: root.backgroundLibrary
-                    watching: root.panelOpen && root.section === "background"
-                    selectedPath: root.imagePath
-                    busy: root.busy || root.libraryPending
-                    onAddRequested: imageDialog.open()
-                    onRefreshRequested: root.refreshBackgrounds()
-                    onSelected: function(path) { root.chooseBackground(path) }
+                    TextField {
+                        objectName: "backgroundLibraryPath"
+                        Layout.fillWidth: true
+                        readOnly: true; selectByMouse: true
+                        text: root.backgroundLibrary.directory || ""
+                        placeholderText: qsTr("Loading background folder…")
+                        Accessible.name: qsTr("Background storage folder")
+                    }
+                    Button {
+                        text: qsTr("Open folder")
+                        enabled: !!root.backgroundLibrary.directory
+                        onClicked: Qt.openUrlExternally(root.backgroundUrl(root.backgroundLibrary.directory))
+                    }
                 }
-                BackgroundFraming {
+                LabelText { text: qsTr("Add images here or copy them into this folder. The list updates automatically."); color: "#a9b4c1"; Layout.fillWidth: true }
+                GridLayout {
+                    id: backgroundsPane
                     Layout.fillWidth: true
-                    visible: root.backgroundMode === "image" && root.imagePath !== ""
-                    imageSource: root.backgroundUrl(root.imagePath)
-                    crop: root.backgroundCrop
-                    onEdited: function(value) { root.editBackgroundCrop(value) }
+                    columns: width >= 580 ? 2 : 1
+                    columnSpacing: 16
+                    rowSpacing: 12
+                    BackgroundLibrary {
+                        Layout.fillWidth: true
+                        Layout.alignment: Qt.AlignTop
+                        Layout.preferredWidth: backgroundsPane.columns === 2 ? 220 : backgroundsPane.width
+                        Layout.maximumWidth: backgroundsPane.columns === 2 ? 240 : Infinity
+                        compact: backgroundsPane.columns === 2
+                        availableGridHeight: Math.max(120, Math.min(280, root.height - 520))
+                        library: root.backgroundLibrary
+                        watching: root.panelOpen && root.section === "background"
+                        selectedPath: root.imagePath
+                        busy: root.busy || root.libraryPending
+                        onAddRequested: imageDialog.open()
+                        onRefreshRequested: root.refreshBackgrounds()
+                        onSelected: function(path) { root.chooseBackground(path) }
+                    }
+                    BackgroundFraming {
+                        Layout.fillWidth: true
+                        Layout.alignment: Qt.AlignTop
+                        Layout.minimumWidth: backgroundsPane.columns === 2 ? 280 : 0
+                        visible: root.backgroundMode === "image" && root.imagePath !== ""
+                        maximumPreviewHeight: Math.max(100, Math.min(240, root.height - 530))
+                        imageSource: root.backgroundUrl(root.imagePath)
+                        crop: root.backgroundCrop
+                        onEdited: function(value) { root.editBackgroundCrop(value) }
+                        onPageScrollRequested: function(amount) {
+                            var flick = editorScroll.contentItem
+                            flick.contentY = Math.max(0, Math.min(flick.contentHeight - flick.height, flick.contentY + amount))
+                        }
+                    }
                 }
                 RowLayout {
                     visible: root.cropMessage !== "" && root.backgroundMode === "image"
@@ -614,13 +679,6 @@ Rectangle {
                 nextCheckState: function() { return checkState }
                 onClicked: root.toggleAutostart()
             }
-            RowLayout {
-                id: profileActions
-                Button { objectName: "saveButton"; text: root.busy ? qsTr("Working…") : qsTr("Save profile"); highlighted: true; enabled: root.document !== null && root.dirty && !root.busy && root.profileName.trim() !== "" && (root.backgroundMode !== "image" || root.imageReady); onClicked: root.save() }
-                Button { text: qsTr("Reload saved"); enabled: !root.busy; onClicked: root.dirty ? discardDialog.open() : root.request("read", []) }
-                Item { Layout.fillWidth: true }
-                Button { text: qsTr("Remote cameras"); enabled: !root.busy; onClicked: root.request("remote", []) }
-            }
             Loader {
                 Layout.fillWidth: true
                 Layout.preferredHeight: 560
@@ -628,8 +686,6 @@ Rectangle {
                 active: root.setupContent !== null
                 sourceComponent: root.setupContent
             }
-            LabelText { id: saveStatus; objectName: "saveStatus"; text: root.message; color: root.accent; Layout.fillWidth: true }
-            LabelText { visible: root.remoteSummary !== ""; text: root.remoteSummary; Layout.fillWidth: true; font.pixelSize: 12 }
             Rectangle { Layout.fillWidth: true; height: 1; color: "#39414b" }
             Button {
                 objectName: "outputHelpToggle"
