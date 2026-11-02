@@ -7,6 +7,7 @@ ScrollView {
     clip: true
     padding: 22
     contentWidth: availableWidth
+    ScrollBar.vertical: ScrollBar { policy: root.contentHeight > root.availableHeight ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff }
     ColumnLayout {
         width: root.availableWidth
         spacing: 16
@@ -16,7 +17,7 @@ ScrollView {
         Plain { text: qsTr("Persistent camera framing and locally processed backgrounds for the Omarchy desktop.") }
         Plain { text: qsTr("How it works"); font.bold: true; font.pixelSize: 18 }
         Plain { text: qsTr("The Omarchy plugin is the control panel. It remembers your camera and saves profiles with framing, mirror and background choices in your home directory.") }
-        Plain { text: qsTr("A separate local worker captures the camera and uses person matting to blend you with a chosen image or blurred background. The Camera tab shows that processed preview. Camera images are processed on this computer.") }
+        Plain { text: qsTr("A separate local worker captures the camera and uses person matting to blend you with a chosen image or blurred background. The Camera tab shows that processed preview. Camera images are processed on this computer. When enabled in Setup, the NVIDIA GPU accelerates person matting; the preview reports measured FPS and its active backend.") }
         Plain { text: qsTr("A separate user-session service publishes a camera source through PipeWire, the desktop media system. Meeting apps can discover it through a supported browser camera backend and normal camera permissions. Closing the controls leaves explicitly started test output running.") }
         Plain { text: qsTr("Why no sudo is needed"); font.bold: true; font.pixelSize: 18 }
         Plain { text: qsTr("The panel, worker, settings and output service belong to your signed-in user. They use the desktop’s existing PipeWire session and camera access. WebcamTuner does not install a kernel camera driver, create a /dev/video device, or change system-wide configuration, so its setup does not require administrator privileges.") }

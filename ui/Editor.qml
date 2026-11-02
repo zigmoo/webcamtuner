@@ -30,6 +30,11 @@ Rectangle {
     property real centerY: 0.5
     property string backgroundMode: "none"
     property string imagePath: ""
+    property var backgroundCrop: ({zoom: 1, centerX: 0.5, centerY: 0.5})
+    property var cropDrafts: ({})
+    property var cropInFlight: null
+    property string cropMessage: ""
+    property bool cropSaveFailed: false
     property bool restoreOnStart: true
     property bool mirror: true
     property bool mirrorPending: false
@@ -103,15 +108,41 @@ Rectangle {
     }
     function chooseBackground(path) {
         if (path.indexOf("file:///") === 0) path = decodeURIComponent(path.slice(7))
+        if (imagePath !== path) backgroundCrop = cropFor(path)
         imagePath = path
         backgroundMode = "image"
         mark()
     }
+    function cropFor(path, fallback) {
+        if (cropDrafts[path]) return cropDrafts[path]
+        for (var i = 0; i < backgroundLibrary.items.length; i++)
+            if (backgroundLibrary.items[i].path === path) return backgroundLibrary.items[i].crop
+        if (backgroundLibrary.selected && backgroundLibrary.selected.path === path && backgroundLibrary.selected.hasCrop) return backgroundLibrary.selected.crop
+        return fallback || {zoom: 1, centerX: 0.5, centerY: 0.5}
+    }
+    function editBackgroundCrop(value) {
+        backgroundCrop = value
+        var drafts = Object.assign({}, cropDrafts)
+        drafts[imagePath] = value
+        cropDrafts = drafts
+        cropMessage = qsTr("Saving background framing…")
+        cropSaveFailed = false
+        mark()
+        cropSave.restart()
+    }
+    function flushBackgroundCrop() {
+        if (busy || cropInFlight !== null) { cropSave.restart(); return }
+        var paths = Object.keys(cropDrafts)
+        if (!paths.length) return
+        var path = paths[0], value = cropDrafts[path]
+        cropInFlight = {path: path, crop: value}
+        request("background-crop", ["--path", path, "--crop", JSON.stringify(value)])
+    }
     function refreshBackgrounds() {
         if (busy || libraryPending) { libraryRefresh.restart(); return }
         libraryPending = true
-        libraryMessage = qsTr("Loading backgrounds…")
-        request("backgrounds", [])
+        if (!backgroundLibrary.directory) libraryMessage = qsTr("Loading backgrounds…")
+        request("backgrounds", imagePath ? ["--selected-path", imagePath] : [])
     }
     function addBackgrounds(paths) {
         if (busy || libraryPending) return
@@ -122,7 +153,7 @@ Rectangle {
     function previewSettings() {
         if (backgroundMode === "image" && !imageReady) return null
         return { camera: savedCamera, mirror: mirror, crop: { zoom: zoom, centerX: centerX, centerY: centerY },
-            background: { mode: backgroundMode, imagePath: imagePath } }
+            background: { mode: backgroundMode, imagePath: imagePath, crop: backgroundCrop } }
     }
     function frame(z, x, y) {
         zoom = Math.max(1, Math.min(4, z))
@@ -138,6 +169,7 @@ Rectangle {
         if (savedCamera !== p.source.camera) previewOn = false
         zoom = p.crop.zoom; centerX = p.crop.centerX; centerY = p.crop.centerY
         profileName = p.name; backgroundMode = p.background.mode; imagePath = p.background.imagePath
+        backgroundCrop = cropFor(imagePath, p.background.crop)
         savedCamera = p.source.camera; sourceHost = p.source.host; sourceKind = p.source.kind
         restoreOnStart = p.restoreOnStart
         mirror = p.mirror === undefined ? true : p.mirror
@@ -146,9 +178,24 @@ Rectangle {
         if (cameraChoiceReady) chooseCamera()
     }
     function accept(action, result) {
+        if (action === "background-crop") {
+            var drafts = Object.assign({}, cropDrafts)
+            if (JSON.stringify(drafts[result.path]) === JSON.stringify(result.crop)) delete drafts[result.path]
+            cropDrafts = drafts
+            cropInFlight = null
+            var updated = JSON.parse(JSON.stringify(backgroundLibrary))
+            for (var i = 0; i < updated.items.length; i++)
+                if (updated.items[i].id === result.id) updated.items[i].crop = result.crop
+            backgroundLibrary = updated
+            cropMessage = qsTr("Background framing saved for this image")
+            cropSaveFailed = false
+            if (Object.keys(cropDrafts).length) cropSave.restart()
+            return
+        }
         if (action === "backgrounds" || action === "add-backgrounds") {
             libraryPending = false
-            backgroundLibrary = result
+            if (JSON.stringify(backgroundLibrary) !== JSON.stringify(result)) backgroundLibrary = result
+            if (result.selected && result.selected.path === imagePath && result.selected.hasCrop && !cropDrafts[imagePath]) backgroundCrop = result.selected.crop
             libraryMessage = qsTr("%1 saved backgrounds").arg(result.items.length)
             if (action === "add-backgrounds") {
                 if (result.added.length) {
@@ -157,7 +204,8 @@ Rectangle {
                 }
                 if (result.errors.length) libraryMessage += "\n" + result.errors.map(e => e.name + ": " + e.message).join("\n")
             }
-            if (result.unreadable.length) libraryMessage += "\n" + qsTr("Some files could not be read. Add them again to repair their copies.")
+            if (result.limited) libraryMessage += "\n" + qsTr("Showing the first 512 images.")
+            if (result.unreadable.length) libraryMessage += "\n" + qsTr("Some files are not ready or readable yet. They will be checked again automatically.")
             return
         }
         if (action === "read" || action === "save") {
@@ -189,7 +237,7 @@ Rectangle {
             var index = result.profiles.findIndex(p => p.id === result.activeProfile)
             restore(Math.max(0, index))
             message = action === "save" ? qsTr("Saved to disk and verified · revision %1").arg(result.revision) : result.revision === 0 ? qsTr("New profile. Save to keep your settings.") : qsTr("Profile restored from disk")
-            if (action === "read") refreshCameraInventory()
+            if (action === "read") { refreshCameraInventory(); if (backgroundMode === "image") refreshBackgrounds() }
         } else if (action === "devices") {
             cameraAliases = result.aliases || []
             cameraChoiceReady = true
@@ -200,18 +248,43 @@ Rectangle {
             message = qsTr("Discovery complete. Remote video input is planned.")
         }
     }
-    function save() {
-        if (!document || busy) return
+    function draftDocument() {
+        if (!document) return null
         var next = JSON.parse(JSON.stringify(document))
         var p = next.profiles[profileIndex]
         p.name = profileName
         p.crop = { zoom: zoom, centerX: centerX, centerY: centerY }
-        p.background = { mode: backgroundMode, imagePath: imagePath }
+        p.background = { mode: backgroundMode, imagePath: imagePath, crop: backgroundCrop }
         p.source = { kind: sourceKind, host: sourceHost, camera: savedCamera }
         p.restoreOnStart = restoreOnStart
         p.mirror = mirror
         p.autostartCamera = autostartCamera
         next.activeProfile = p.id
+        return next
+    }
+    function exportDraft() {
+        if (busy || !document) return null
+        return {schemaVersion: 1, document: draftDocument(), dirty: dirty, crops: cropDrafts}
+    }
+    function restoreDraft(snapshot) {
+        if (busy || !document || !snapshot || snapshot.schemaVersion !== 1 || !snapshot.document
+            || snapshot.document.revision !== document.revision || !Array.isArray(snapshot.document.profiles)
+            || !snapshot.document.profiles.length) return false
+        var index = snapshot.document.profiles.findIndex(p => p.id === snapshot.document.activeProfile)
+        if (index < 0) return false
+        var candidate = snapshot.document.profiles[index]
+        if (!candidate.crop || !candidate.background || !candidate.source || typeof candidate.name !== "string") return false
+        document = snapshot.document
+        cropDrafts = snapshot.crops || {}
+        restore(index)
+        dirty = !!snapshot.dirty
+        message = dirty ? qsTr("Unsaved adjustments recovered") : qsTr("Profile restored from disk")
+        if (Object.keys(cropDrafts).length) cropSave.restart()
+        return true
+    }
+    function save() {
+        if (!document || busy) return
+        var next = draftDocument()
         message = qsTr("Saving and verifying…")
         request("save", ["--document", JSON.stringify(next)])
     }
@@ -232,6 +305,7 @@ Rectangle {
         request("save", ["--document", JSON.stringify(next)])
     }
     function fail(message) {
+        if (cropInFlight !== null) { cropInFlight = null; cropSaveFailed = true; cropMessage = qsTr("Could not save background framing: ") + message }
         if (libraryPending) { libraryPending = false; libraryMessage = message }
         mirrorPending = false
         cameraPending = false
@@ -284,6 +358,7 @@ Rectangle {
         restore(next.profiles.length - 1); mark()
     }
     MediaDevices { id: devices; onVideoInputsChanged: cameraRefresh.restart() }
+    Timer { id: cropSave; interval: 400; onTriggered: root.flushBackgroundCrop() }
     Timer { id: libraryRefresh; interval: 200; onTriggered: root.refreshBackgrounds() }
     Timer { id: cameraRefresh; interval: 200; onTriggered: root.refreshCameraInventory() }
     Loader {
@@ -306,11 +381,16 @@ Rectangle {
         anchors.margins: 22
         clip: true
         contentWidth: availableWidth
+        ScrollBar.vertical: ScrollBar {
+            objectName: "editorScrollbar"
+            policy: editorScroll.contentHeight > editorScroll.availableHeight ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
+        }
         ColumnLayout {
             width: parent.width
             spacing: 14
-            LabelText { text: qsTr("Frame your camera. Choose a background. Save your look."); color: "#a9b4c1"; Layout.fillWidth: true }
+            LabelText { id: pageIntro; text: qsTr("Frame your camera. Choose a background. Save your look."); color: "#a9b4c1"; Layout.fillWidth: true }
             RowLayout {
+                id: profileRow
                 Layout.fillWidth: true
                 ComboBox {
                     id: profileChoice; objectName: "profileChoice"
@@ -332,6 +412,7 @@ Rectangle {
                 Layout.fillWidth: true
                 visible: root.section === "all" || root.section === "camera"
                 RowLayout {
+                    id: cameraSelectorRow
                     Layout.fillWidth: true
                     ComboBox {
                         objectName: "cameraChoice"; Layout.fillWidth: true
@@ -351,9 +432,18 @@ Rectangle {
                         onClicked: { root.autostartRequested = false; root.previewOn = !root.previewOn }
                     }
                 }
-                Rectangle {
+                Item {
+                    objectName: "cameraPreviewArea"
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: Math.min(width * 9 / 16, Math.max(90, editorScroll.availableHeight
+                        - pageIntro.implicitHeight - profileRow.implicitHeight - cameraSelectorRow.implicitHeight
+                        - framingGuide.implicitHeight - zoomControls.implicitHeight - mirrorControl.implicitHeight
+                        - captureInfo.implicitHeight - profileActions.implicitHeight - saveStatus.implicitHeight - 126))
+                    Rectangle {
                     id: stage
-                    Layout.fillWidth: true; Layout.preferredHeight: width * 9 / 16
+                    anchors.centerIn: parent
+                    width: Math.min(parent.width, parent.height * 16 / 9)
+                    height: width * 9 / 16
                     color: "#0e131b"; clip: true
                     Image {
                         id: backgroundImage
@@ -411,17 +501,21 @@ Rectangle {
                         onWheel: function(wheel) { root.frame(root.zoom + (wheel.angleDelta.y > 0 ? 0.1 : -0.1), root.centerX, root.centerY); wheel.accepted = true }
                     }
                 }
+                }
                 LabelText {
+                    id: framingGuide
                     text: qsTr("Zoom in, then drag the image above to adjust framing.")
                     color: "#a9b4c1"
                     Layout.fillWidth: true
                 }
                 RowLayout {
+                    id: zoomControls
                     LabelText { text: qsTr("Camera zoom"); Layout.preferredWidth: 95 }
                     Slider { objectName: "zoomSlider"; Layout.fillWidth: true; from: 1; to: 4; value: root.zoom; stepSize: 0.05; onMoved: root.frame(value, root.centerX, root.centerY) }
                     Button { text: qsTr("Reset frame"); onClicked: root.frame(1, 0.5, 0.5) }
                 }
                 CheckBox {
+                    id: mirrorControl
                     objectName: "mirrorToggle"
                     text: root.mirrorPending ? qsTr("Mirror (saving…)") : qsTr("Mirror")
                     checked: root.mirror
@@ -430,10 +524,12 @@ Rectangle {
                     onClicked: root.toggleMirror()
                 }
                 LabelText {
+                    id: captureInfo
                     text: root.cropWidth > 0
-                        ? qsTr("Capture %1 × %2 at %3 fps · crop %4 × %5 · scaled preview %6 × %7")
+                        ? qsTr("Capture %1 × %2 at %3 fps · crop %4 × %5 · preview %6 × %7 at %8 fps · %9")
                             .arg(root.captureFormat.captureWidth).arg(root.captureFormat.captureHeight).arg(Math.round(root.captureFormat.captureFps))
                             .arg(root.cropWidth).arg(root.cropHeight).arg(root.captureFormat.previewWidth).arg(root.captureFormat.previewHeight)
+                            .arg(Math.round(root.captureFormat.previewFps || 0)).arg(root.captureFormat.provider === "CUDAExecutionProvider" ? qsTr("NVIDIA GPU") : root.captureFormat.provider === "CPUExecutionProvider" ? qsTr("CPU") : qsTr("Original"))
                         : qsTr("Start preview to see the negotiated capture resolution and available crop detail.")
                     font.pixelSize: 12; color: "#a9b4c1"; Layout.fillWidth: true
                 }
@@ -467,11 +563,25 @@ Rectangle {
                 BackgroundLibrary {
                     Layout.fillWidth: true
                     library: root.backgroundLibrary
+                    watching: root.panelOpen && root.section === "background"
                     selectedPath: root.imagePath
                     busy: root.busy || root.libraryPending
                     onAddRequested: imageDialog.open()
                     onRefreshRequested: root.refreshBackgrounds()
                     onSelected: function(path) { root.chooseBackground(path) }
+                }
+                BackgroundFraming {
+                    Layout.fillWidth: true
+                    visible: root.backgroundMode === "image" && root.imagePath !== ""
+                    imageSource: root.backgroundUrl(root.imagePath)
+                    crop: root.backgroundCrop
+                    onEdited: function(value) { root.editBackgroundCrop(value) }
+                }
+                RowLayout {
+                    visible: root.cropMessage !== "" && root.backgroundMode === "image"
+                    Layout.fillWidth: true
+                    LabelText { text: root.cropMessage; color: root.accent; Layout.fillWidth: true }
+                    Button { visible: root.cropSaveFailed; text: qsTr("Retry"); onClicked: root.flushBackgroundCrop() }
                 }
                 LabelText { text: root.libraryMessage; visible: text !== ""; color: root.accent; Layout.fillWidth: true }
                 LabelText { objectName: "backgroundFeedback"; visible: root.backgroundMode !== "none"; text: root.backgroundFeedback; color: root.backgroundMode === "image" && !root.imageReady ? "#f1b58a" : root.accent; Layout.fillWidth: true }
@@ -493,6 +603,7 @@ Rectangle {
                 onClicked: root.toggleAutostart()
             }
             RowLayout {
+                id: profileActions
                 Button { objectName: "saveButton"; text: root.busy ? qsTr("Working…") : qsTr("Save profile"); highlighted: true; enabled: root.document !== null && root.dirty && !root.busy && root.profileName.trim() !== "" && (root.backgroundMode !== "image" || root.imageReady); onClicked: root.save() }
                 Button { text: qsTr("Reload saved"); enabled: !root.busy; onClicked: root.dirty ? discardDialog.open() : root.request("read", []) }
                 Item { Layout.fillWidth: true }
@@ -505,7 +616,7 @@ Rectangle {
                 active: root.setupContent !== null
                 sourceComponent: root.setupContent
             }
-            LabelText { objectName: "saveStatus"; text: root.message; color: root.accent; Layout.fillWidth: true }
+            LabelText { id: saveStatus; objectName: "saveStatus"; text: root.message; color: root.accent; Layout.fillWidth: true }
             LabelText { visible: root.remoteSummary !== ""; text: root.remoteSummary; Layout.fillWidth: true; font.pixelSize: 12 }
             Rectangle { Layout.fillWidth: true; height: 1; color: "#39414b" }
             Button {

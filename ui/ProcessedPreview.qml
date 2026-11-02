@@ -41,7 +41,7 @@ Item {
                     else if (value.frame) {
                         root.format = { captureWidth: value.captureWidth, captureHeight: value.captureHeight,
                             captureFps: value.captureFps, retainedWidth: value.retainedWidth, retainedHeight: value.retainedHeight,
-                            previewWidth: value.width, previewHeight: value.height }
+                            previewWidth: value.width, previewHeight: value.height, previewFps: value.previewFps, provider: value.provider, dropped: value.dropped }
                         root.frameUrl = "data:image/jpeg;base64," + value.frame
                         root.effect = value.effect
                         root.frameReceived(value.effect)

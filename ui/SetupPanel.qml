@@ -9,6 +9,8 @@ ScrollView {
     contentWidth: availableWidth
     property var state: ({state: "unknown", published: false})
     property string feedback: qsTr("Checking your user session…")
+    property var runtimeState: ({gpuEnabled: false, gpu: ""})
+    property string runtimeMessage: ""
     property string diagnostics: ""
     property string pluginRoot: Qt.resolvedUrl("../").toString().replace(/^file:\/\//, "").replace(/\/$/, "")
     function request(action) {
@@ -21,8 +23,28 @@ ScrollView {
         controller.command = ["python3", pluginRoot + "/bin/browser-control.py", app]
         controller.running = true
     }
-    onVisibleChanged: if (visible) request("status")
-    Component.onCompleted: request("status")
+    onVisibleChanged: if (visible) { request("status"); refreshRuntime() }
+    Component.onCompleted: { request("status"); refreshRuntime() }
+    function refreshRuntime() {
+        if (runtimeProcess.running) return
+        runtimeProcess.command = ["python3", pluginRoot + "/bin/runtime-control.py", "status"]
+        runtimeProcess.running = true
+    }
+    Process {
+        id: runtimeProcess
+        stdout: StdioCollector { id: runtimeOutput; waitForEnd: true }
+        stderr: StdioCollector { id: runtimeError; waitForEnd: true }
+        onExited: function(code) {
+            try {
+                var value = JSON.parse(runtimeOutput.text)
+                root.runtimeState = value
+                root.runtimeMessage = value.message
+            } catch (e) {
+                root.runtimeMessage = code === 0 ? qsTr("GPU libraries verified. Restart camera preview to apply.") : String(runtimeError.text || runtimeOutput.text).slice(-700)
+                if (code === 0) Qt.callLater(root.refreshRuntime)
+            }
+        }
+    }
     Timer { interval: 2500; repeat: true; running: root.visible; onTriggered: root.request("status") }
     Process {
         id: controller
@@ -41,6 +63,29 @@ ScrollView {
         width: root.availableWidth
         spacing: 16
         component Plain: Text { color: "#e9ecef"; textFormat: Text.PlainText; wrapMode: Text.WordWrap; Layout.fillWidth: true; font.pixelSize: 14 }
+        Plain { text: qsTr("Preview performance"); font.pixelSize: 22; font.bold: true }
+        Plain { text: root.runtimeState.gpu ? qsTr("Available GPU: ") + root.runtimeState.gpu : qsTr("No supported NVIDIA GPU detected. CPU processing is available.") }
+        Plain { text: root.runtimeMessage }
+        RowLayout {
+            Button {
+                text: runtimeProcess.running ? qsTr("Working…") : qsTr("Enable GPU acceleration")
+                enabled: !runtimeProcess.running && !!root.runtimeState.gpu
+                onClicked: {
+                    root.runtimeMessage = qsTr("Preparing your local GPU runtime…")
+                    runtimeProcess.command = ["bash", root.pluginRoot + "/bin/setup-gpu"]
+                    runtimeProcess.running = true
+                }
+            }
+            Button {
+                text: qsTr("Use CPU")
+                enabled: !runtimeProcess.running && root.runtimeState.gpuEnabled
+                onClicked: {
+                    runtimeProcess.command = ["python3", root.pluginRoot + "/bin/runtime-control.py", "cpu"]
+                    runtimeProcess.running = true
+                }
+            }
+        }
+        Plain { text: qsTr("GPU setup downloads processing libraries into your home directory. Camera preview reports its measured fresh-frame rate and active processing backend. Restart preview after changing the runtime."); color: "#a9b4c1" }
         Plain { text: qsTr("Camera output setup"); font.pixelSize: 22; font.bold: true }
         Plain { text: qsTr("Compatibility test · This build publishes a moving test pattern as WebcamTuner. Your camera and background are not connected to this output yet.") }
         Plain { text: qsTr("The test runs in your user session without administrator access. Closing this window leaves it running. Stop it here; it also stops automatically after 30 minutes."); color: "#a9b4c1" }

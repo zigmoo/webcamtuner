@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "moo.webcamtuner",
   "name": "WebcamTuner",
-  "version": "0.7.1",
+  "version": "0.8.0",
   "author": "Jason Benjamin Ziegler Sr",
   "license": "Apache-2.0 AND GPL-3.0-only",
   "description": "Persistent framing and background preview, with a user-session virtual-camera compatibility test.",

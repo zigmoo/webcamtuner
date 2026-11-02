@@ -24,6 +24,27 @@ class BackgroundTests(unittest.TestCase):
         np.testing.assert_array_equal(output[8, 14], frame[8, 14])
         np.testing.assert_array_equal(output[0, 0], image[0, 0])
 
+    def test_low_resolution_matte_uses_the_same_full_source_crop(self):
+        mask = np.zeros((360,640,1),dtype=np.float32)
+        mask[90:270,160:480] = 1
+        crop = {'zoom':2,'centerX':0.5,'centerY':0.5}
+        aligned = preview.align_matte(mask,1280,720,crop,640,360)
+        self.assertEqual(aligned.shape,(360,640,1))
+        self.assertAlmostEqual(float(aligned[180,320,0]),1)
+        self.assertGreater(float(aligned[2:-2,2:-2].mean()),0.999)
+
+    def test_background_crop_selects_area_without_moving_foreground(self):
+        image = np.zeros((200,400,3),dtype=np.uint8)
+        image[:,:200] = (0,0,255)
+        image[:,200:] = (0,255,0)
+        frame = np.full((90,160,3), 80, dtype=np.uint8)
+        mask = np.zeros((90,160,1),dtype=np.float32)
+        mask[20:70,60:100] = 1
+        crop = {'zoom':2,'centerX':0.75,'centerY':0.5}
+        result = preview.composite(frame,mask,'image',image,crop)
+        np.testing.assert_array_equal(result[0,0], (0,255,0))
+        np.testing.assert_array_equal(result[45,80], frame[45,80])
+
     def test_blur_changes_background_but_preserves_foreground(self):
         frame = np.zeros((60, 80, 3), dtype=np.uint8)
         frame[::2] = 255

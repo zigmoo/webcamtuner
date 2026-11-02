@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 WEBCAMTUNER_PYTHON="${XDG_DATA_HOME:-$HOME/.local/share}/webcamtuner/runtime/bin/python"
+WEBCAMTUNER_GPU_RUNTIME="${XDG_DATA_HOME:-$HOME/.local/share}/webcamtuner/runtime-gpu"
+if [[ -f "$WEBCAMTUNER_GPU_RUNTIME/enabled.json" && -x "$WEBCAMTUNER_GPU_RUNTIME/bin/python" && "${WEBCAMTUNER_FORCE_CPU:-0}" != 1 ]]; then
+  WEBCAMTUNER_PYTHON="$WEBCAMTUNER_GPU_RUNTIME/bin/python"
+fi
 if [[ ! -x "$WEBCAMTUNER_PYTHON" ]]; then
   printf '%s\n' '{"error":"WebcamTuner preview runtime is missing. Run npm run setup:preview in the source project."}'
   exit 1

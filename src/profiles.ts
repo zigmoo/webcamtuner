@@ -16,7 +16,9 @@ export const profileSchema = z.object({
   crop: z.object({ zoom: z.number().finite().min(1).max(4), centerX: unit, centerY: unit }).strict()
     .refine(c => c.centerX >= 0.5 / c.zoom && c.centerX <= 1 - 0.5 / c.zoom
       && c.centerY >= 0.5 / c.zoom && c.centerY <= 1 - 0.5 / c.zoom, 'Crop must stay inside the source frame'),
-  background: z.object({ mode: z.enum(['none', 'blur', 'image']), imagePath: z.string().max(4096) }).strict(),
+  background: z.object({ mode: z.enum(['none', 'blur', 'image']), imagePath: z.string().max(4096),
+    crop: z.object({ zoom: z.number().finite().min(1).max(4), centerX: unit, centerY: unit }).strict().optional(),
+  }).strict(),
   mirror: z.boolean().default(true),
   autostartCamera: z.boolean().default(true),
   restoreOnStart: z.boolean(),

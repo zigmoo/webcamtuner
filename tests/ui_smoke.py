@@ -55,6 +55,9 @@ def exercise():
         assert document["profiles"][0]["background"]["mode"] == "blur"
         assert editor.property("dirty") is False
         evaluate("frame(3, 0.5, 0.5)")
+        evaluate("var snapshot=exportDraft(); frame(1,0.5,0.5); if(!restoreDraft(snapshot)) throw new Error('Draft recovery failed')")
+        assert editor.property("zoom") == 3 and editor.property("dirty") is True
+        assert json.loads((scratch / "ui-profiles" / "profiles.json").read_text())["profiles"][0]["crop"]["zoom"] == 2
         controller("read", [])
         assert editor.property("zoom") == 2
         assert editor.property("dirty") is False

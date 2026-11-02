@@ -1,12 +1,40 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import Qt.labs.folderlistmodel
 
 ColumnLayout {
     id: root
+    objectName: "backgroundLibraryView"
     property var library: ({directory: "", items: []})
     property string selectedPath: ""
     property bool busy: false
+    property bool watching: false
+    property int refreshInterval: 15000
+    property real previousScroll: 0
+    property bool updating: false
+    onLibraryChanged: {
+        updating = true
+        Qt.callLater(function() {
+            grid.contentY = Math.max(0, Math.min(root.previousScroll, grid.contentHeight - grid.height))
+            root.updating = false
+        })
+    }
+    FolderListModel {
+        id: folder
+        folder: root.watching && root.library.directory ? "file://" + root.library.directory.split("/").map(encodeURIComponent).join("/") : ""
+        nameFilters: ["*.jpg", "*.jpeg", "*.png", "*.webp"]
+        caseSensitive: false
+        showDirs: false
+        showHidden: false
+        onCountChanged: if (root.watching) changed.restart()
+    }
+    Connections {
+        target: folder
+        function onDataChanged() { if (root.watching) changed.restart() }
+    }
+    Timer { id: changed; interval: 1200; onTriggered: if (root.watching && !root.busy) root.refreshRequested() }
+    Timer { interval: root.refreshInterval; repeat: true; running: root.watching; onTriggered: if (!root.busy) root.refreshRequested() }
     signal addRequested()
     signal refreshRequested()
     signal selected(string path)
@@ -46,6 +74,7 @@ ColumnLayout {
     GridView {
         id: grid
         objectName: "backgroundGrid"
+        onContentYChanged: if (!root.updating) root.previousScroll = contentY
         visible: root.library.items.length > 0
         Layout.fillWidth: true
         Layout.preferredHeight: Math.min(360, contentHeight)
@@ -56,7 +85,7 @@ ColumnLayout {
         boundsBehavior: Flickable.StopAtBounds
         keyNavigationEnabled: true
         activeFocusOnTab: true
-        ScrollBar.vertical: ScrollBar {}
+        ScrollBar.vertical: ScrollBar { policy: grid.contentHeight > grid.height ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff }
         delegate: ItemDelegate {
             required property var modelData
             width: grid.cellWidth - 8

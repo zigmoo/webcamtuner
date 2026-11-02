@@ -13,7 +13,7 @@ shutil.copytree(root / "ui", target / "ui", dirs_exist_ok=True)
 (target / "dist").mkdir(exist_ok=True)
 shutil.copy2(root / "bin" / "webcamtuner", target / "bin" / "webcamtuner")
 shutil.copy2(root / "bin" / "process_preview.py", target / "bin" / "process_preview.py")
-for helper in ("output-control.py", "synthetic-camera.py", "browser-control.py", "background-library.py"):
+for helper in ("output-control.py", "synthetic-camera.py", "browser-control.py", "background-library.py", "setup-gpu", "runtime-control.py"):
     shutil.copy2(root / "bin" / helper, target / "bin" / helper)
 shutil.copy2(root / "bin" / "preview-python", target / "bin" / "preview-python")
 shutil.copy2(root / "bin" / "setup-preview", target / "bin" / "setup-preview")

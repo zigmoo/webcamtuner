@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
+from collections import deque
 import base64
 import json
 import math
@@ -71,6 +73,11 @@ def validate_settings(settings: dict) -> dict:
         raise ValueError("Unknown background mode")
     if background["mode"] == "image" and not isinstance(background.get("imagePath"), str):
         raise ValueError("Choose a background image")
+    bg_crop = background.get("crop", {"zoom": 1, "centerX": 0.5, "centerY": 0.5})
+    if not isinstance(bg_crop, dict) or not all(isinstance(bg_crop.get(k), (int, float)) and not isinstance(bg_crop[k], bool) and math.isfinite(bg_crop[k]) for k in ("zoom", "centerX", "centerY")):
+        raise ValueError("Invalid background crop")
+    if not 1 <= bg_crop["zoom"] <= 4 or not 0 <= bg_crop["centerX"] <= 1 or not 0 <= bg_crop["centerY"] <= 1:
+        raise ValueError("Background crop is outside its limits")
     return settings
 
 
@@ -79,6 +86,17 @@ def fit_cover(image: np.ndarray, width: int, height: int) -> np.ndarray:
     sized = cv2.resize(image, (math.ceil(image.shape[1] * scale), math.ceil(image.shape[0] * scale)))
     x, y = (sized.shape[1] - width) // 2, (sized.shape[0] - height) // 2
     return sized[y:y + height, x:x + width]
+
+
+def fit_background(image: np.ndarray, width: int, height: int, crop: dict | None = None) -> np.ndarray:
+    if crop is None:
+        return fit_cover(image, width, height)
+    ih, iw = image.shape[:2]
+    cover = max(width / iw, height / ih) * crop['zoom']
+    cw, ch = max(1, min(iw, round(width / cover))), max(1, min(ih, round(height / cover)))
+    x = max(0, min(iw - cw, round(crop['centerX'] * iw - cw / 2)))
+    y = max(0, min(ih - ch, round(crop['centerY'] * ih - ch / 2)))
+    return cv2.resize(image[y:y + ch, x:x + cw], (width, height))
 
 
 def crop_bounds(width: int, height: int, crop: dict) -> tuple[int, int, int, int]:
@@ -147,14 +165,25 @@ class Segmenter:
         options = ort.SessionOptions()
         options.intra_op_num_threads = 2
         options.inter_op_num_threads = 1
-        self.net = ort.InferenceSession(str(model), sess_options=options, providers=["CPUExecutionProvider"])
+        providers = ["CPUExecutionProvider"]
+        if "CUDAExecutionProvider" in ort.get_available_providers():
+            if hasattr(ort, "preload_dlls"):
+                with contextlib.redirect_stdout(sys.stderr):
+                    ort.preload_dlls(directory="")
+            providers = [("CUDAExecutionProvider", {"cudnn_conv_algo_search": "HEURISTIC", "gpu_mem_limit": 2 * 1024 ** 3}), "CPUExecutionProvider"]
+        with contextlib.redirect_stdout(sys.stderr):
+            self.net = ort.InferenceSession(str(model), sess_options=options, providers=providers)
+        self.provider = self.net.get_providers()[0]
+        self.outputs = [value.name for value in self.net.get_outputs()][1:]
+        self.run_options = ort.RunOptions()
+        self.run_options.only_execute_path_to_fetches = True
         self.reset()
 
     def reset(self):
         self.recurrent = [np.zeros((1, 1, 1, 1), dtype=np.float32) for _ in range(4)]
         self.stabilizer = MaskStabilizer()
 
-    def mask(self, frame: np.ndarray) -> np.ndarray:
+    def mask(self, frame: np.ndarray, full_resolution: bool = True) -> np.ndarray:
         # Recycle all four RVM states. Classifying independent frames discarded
         # the temporal context needed for stable heads, hair and glasses.
         scale = min(960 / frame.shape[1], 540 / frame.shape[0], 1)
@@ -162,16 +191,33 @@ class Segmenter:
         blob = cv2.dnn.blobFromImage(low, 1 / 255, swapRB=True)
         inputs = {"src": blob, "downsample_ratio": np.array([0.5], dtype=np.float32)}
         inputs.update({f"r{i + 1}i": value for i, value in enumerate(self.recurrent)})
-        _, alpha, *self.recurrent = self.net.run(None, inputs)
+        alpha, *self.recurrent = self.net.run(self.outputs, inputs, run_options=self.run_options)
         alpha = self.stabilizer.update(low, np.clip(alpha[0, 0], 0, 1)[..., None])
-        return cv2.resize(alpha, (frame.shape[1], frame.shape[0]))[..., None]
+        return cv2.resize(alpha, (frame.shape[1], frame.shape[0]))[..., None] if full_resolution else alpha
 
 
-def composite(frame: np.ndarray, mask: np.ndarray, mode: str, background: np.ndarray | None) -> np.ndarray:
+def align_matte(mask, source_width, source_height, crop, width, height):
+    x, y, w, h = crop_bounds(source_width, source_height, crop)
+    sx, sy = mask.shape[1] / source_width, mask.shape[0] / source_height
+    ax, ay = w / width * sx, h / height * sy
+    matrix = np.array([[ax, 0, x * sx + ax / 2 - 0.5],
+                       [0, ay, y * sy + ay / 2 - 0.5]], dtype=np.float32)
+    return cv2.warpAffine(mask, matrix, (width, height), flags=cv2.INTER_LINEAR | cv2.WARP_INVERSE_MAP,
+                          borderMode=cv2.BORDER_REPLICATE)[..., None]
+
+
+def composite(frame: np.ndarray, mask: np.ndarray, mode: str, background: np.ndarray | None, background_crop: dict | None = None) -> np.ndarray:
     if mode == "none":
         return frame
-    backdrop = cv2.GaussianBlur(frame, (0, 0), 18) if mode == "blur" else fit_cover(background, frame.shape[1], frame.shape[0])
-    return np.clip(frame.astype(np.float32) * mask + backdrop.astype(np.float32) * (1 - mask), 0, 255).astype(np.uint8)
+    if mode == "blur":
+        small = cv2.resize(frame, (max(1, frame.shape[1] // 4), max(1, frame.shape[0] // 4)))
+        backdrop = cv2.resize(cv2.GaussianBlur(small, (0, 0), 4.5), (frame.shape[1], frame.shape[0]))
+    else:
+        backdrop = fit_background(background, frame.shape[1], frame.shape[0], background_crop)
+    alpha = cv2.cvtColor(mask.astype(np.float32, copy=False), cv2.COLOR_GRAY2BGR)
+    foreground = cv2.multiply(frame, alpha, dtype=cv2.CV_32F)
+    background_part = cv2.multiply(backdrop, 1 - alpha, dtype=cv2.CV_32F)
+    return cv2.add(foreground, background_part, dtype=cv2.CV_8U)
 
 
 def orient_camera(frame: np.ndarray, mask: np.ndarray | None, mirror: bool):
@@ -212,6 +258,7 @@ def run(initial: dict, frame_limit: int = 0) -> None:
     listing = subprocess.check_output(["v4l2-ctl", "-d", current["camera"], "--list-formats-ext"], text=True, timeout=5)
     selected = choose_capture_mode(capture_modes(listing))
     capture = cv2.VideoCapture(current["camera"], cv2.CAP_V4L2)
+    reader = None
     try:
         capture.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*selected["fourcc"]))
         capture.set(cv2.CAP_PROP_FRAME_WIDTH, selected["width"])
@@ -222,8 +269,26 @@ def run(initial: dict, frame_limit: int = 0) -> None:
             raise RuntimeError("Cannot open this camera. Close other camera previews and check its privacy switch.")
         if (int(capture.get(cv2.CAP_PROP_FRAME_WIDTH)), int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT))) != (selected["width"], selected["height"]):
             raise RuntimeError("Camera did not accept its selected full-resolution mode")
+        source_fps = capture.get(cv2.CAP_PROP_FPS)
+        target_fps = min(30, source_fps) if source_fps > 0 else 30
+        condition = threading.Condition()
+        latest = {"frame": None, "sequence": 0, "error": None}
+        def grab_frames():
+            while alive.is_set():
+                okay, image = capture.read()
+                with condition:
+                    if not okay:
+                        latest["error"] = "Camera stopped delivering frames; check its privacy switch and connection"
+                        condition.notify_all()
+                        return
+                    latest["frame"] = image
+                    latest["sequence"] += 1
+                    condition.notify_all()
+        reader = threading.Thread(target=grab_frames, daemon=True)
+        reader.start()
         threading.Thread(target=read_updates, daemon=True).start()
-        count = 0
+        count, last_sequence, dropped = 0, 0, 0
+        delivered = deque(maxlen=60)
         while alive.is_set():
             began = time.monotonic()
             with guard:
@@ -240,35 +305,59 @@ def run(initial: dict, frame_limit: int = 0) -> None:
                     current, background = update, candidate
                 except (ValueError, OSError) as error:
                     emit({"error": str(error), "retainedPreviousEffect": True})
-            okay, frame = capture.read()
-            if not okay:
-                raise RuntimeError("Camera stopped delivering frames; check its privacy switch and connection")
+            with condition:
+                deadline = time.monotonic() + (5 if last_sequence == 0 else 1)
+                while latest["sequence"] == last_sequence and not latest["error"] and alive.is_set():
+                    condition.wait(0.1)
+                    if time.monotonic() >= deadline:
+                        raise RuntimeError("Camera stopped delivering fresh frames")
+                if latest["error"]:
+                    raise RuntimeError(latest["error"])
+                if not alive.is_set():
+                    break
+                frame = latest["frame"]
+                sequence = latest["sequence"]
+            dropped += max(0, sequence - last_sequence - 1)
+            last_sequence = sequence
+            captured = time.monotonic()
             source_height, source_width = frame.shape[:2]
             _, _, retained_width, retained_height = crop_bounds(source_width, source_height, current["crop"])
             mode = current["background"]["mode"]
+            matte_ms = 0
             if mode != "none":
                 # Detect the person in the full camera view. Tight user crops can otherwise
                 # remove the shoulders/context the model needs to classify a head correctly.
-                alpha = segmenter.mask(frame)
-                alpha = crop_frame(alpha, current["crop"])[..., None]
+                alpha = segmenter.mask(frame, full_resolution=False)
+                matte_ms = (time.monotonic() - captured) * 1000
                 frame = crop_frame(frame, current["crop"])
+                alpha = align_matte(alpha, source_width, source_height, current["crop"], frame.shape[1], frame.shape[0])
                 frame, alpha = orient_camera(frame, alpha, current.get("mirror", True))
-                frame = composite(frame, alpha, mode, background)
+                frame = composite(frame, alpha, mode, background, current["background"].get("crop"))
             else:
                 frame = crop_frame(frame, current["crop"])
                 frame, _ = orient_camera(frame, None, current.get("mirror", True))
             okay, encoded = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 82])
             if not okay:
                 raise RuntimeError("Could not encode the processed preview")
+            now = time.monotonic()
+            delivered.append(now)
+            actual_fps = (len(delivered) - 1) / (delivered[-1] - delivered[0]) if len(delivered) > 1 else 0
             emit({"frame": base64.b64encode(encoded).decode("ascii"), "effect": mode, "width": frame.shape[1], "height": frame.shape[0],
-                  "captureWidth": source_width, "captureHeight": source_height, "captureFps": capture.get(cv2.CAP_PROP_FPS),
+                  "captureWidth": source_width, "captureHeight": source_height, "captureFps": source_fps, "previewFps": actual_fps,
+                  "sequence": sequence, "dropped": dropped, "processingMs": (now - began) * 1000,
+                  "provider": segmenter.provider if mode != "none" else "No matting",
+                  "matteMs": matte_ms, "captureWaitMs": (captured - began) * 1000,
                   "retainedWidth": retained_width, "retainedHeight": retained_height})
             count += 1
             if frame_limit and count >= frame_limit:
                 break
-            time.sleep(max(0, 1 / 15 - (time.monotonic() - began)))
+            time.sleep(max(0, 1 / target_fps - (time.monotonic() - began)))
     finally:
-        capture.release()
+        alive.clear()
+        if reader is not None:
+            reader.join(timeout=2)
+        if reader is None or not reader.is_alive():
+            capture.release()
 
 
 if __name__ == "__main__":
