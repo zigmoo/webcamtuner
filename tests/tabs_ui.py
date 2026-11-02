@@ -14,13 +14,13 @@ import QtTest
 import "''' + (root / 'ui').as_uri() + '''" as Tuner
 ShellRoot {
  TestCase { id: pointer; when: false }
- Tuner.TunerWindow { id:w; Component.onCompleted: {editor.testing=true; openEditor()} }
+ Tuner.TunerWindow { id:w; Component.onCompleted: {editor.testing=true; openBackgrounds()} }
  property int phase:0
  function expect(ok,msg) { if(!ok) {console.log("FAIL: "+msg);Qt.exit(1)} }
  Timer {interval:250;running:true;repeat:true;onTriggered:{
   if(!w.editor.document || w.editor.busy) return
   var tabs=pointer.findChild(w,"navigationTabs")
-  if(phase===0){w.editor.frame(2,0.5,0.5);pointer.findChild(w.editor,"editorScroll").contentItem.contentY=160;tabs.currentIndex=1}
+  if(phase===0){expect(w.editor.document!==null,"cold background open reads profiles");w.editor.frame(2,0.5,0.5);pointer.findChild(w.editor,"editorScroll").contentItem.contentY=160;tabs.currentIndex=0;tabs.currentIndex=1}
   if(phase===1){expect(w.editor.section==="background" && w.editor.dirty,"background retains draft");tabs.currentIndex=2}
   if(phase===2){expect(w.editor.section==="setup" && w.editor.zoom===2,"setup retains crop");expect(pointer.findChild(w,"startTestOutput")!==null,"setup output control exists");tabs.currentIndex=3}
   if(phase===3){expect(w.editor.dirty,"about retains draft");tabs.currentIndex=0}
