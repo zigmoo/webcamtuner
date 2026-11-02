@@ -2,11 +2,13 @@
 
 Public source: [zigmoo/webcamtuner](https://github.com/zigmoo/webcamtuner). Application source is licensed under Apache-2.0; the bundled Robust Video Matting model retains its separate GPL-3.0 license and provenance in models/rvm/. See [Install](#install) for the marketplace checkout, then build the controller in that checkout. The [Build and review](#build-and-review) steps are for working in this source tree.
 
-An Omarchy plugin for persistent webcam framing and appearance profiles. Processed camera preview and composition editor for DIL-3027 (v0.8.5).
+An Omarchy plugin for persistent webcam framing and appearance profiles. Processed camera preview and composition editor for DIL-3027 (v0.8.7).
 
 Camera is the composition workspace: choose the remembered webcam, preview the composite, select Crop camera or Crop background for one shared source-selection tool, and take a full-resolution processed snapshot. Drag the person to position them; enable Show label beneath the preview to drag or double-click its text and change font, bold, italic, ALL CAPS, size and opacity. Profiles and per-image appearance save automatically. Background contains image selection/import, captions and library management. Setup contains runtime, startup, snapshot-mirror and output-test controls. About includes the version, author and source.
 
 Snapshots are kept in $XDG_DATA_HOME/webcamtuner/snapshots. The Setup checkbox Mirror snapshots to the OS screenshot folder defaults on; it adds a PNG copy to the Omasnap folder and recent-images shelf. Turning it off keeps snapshots local. Existing images in older snapshot folders are left intact. The OS-recents adapter currently targets Omasnap1.24 and uses Python QtCore support; copy/recents failures are reported without losing the local original.
+
+Setup lists the actual V4L2 capture devices and PipeWire video sources with their paths/node IDs and current WebcamTuner output identity. Open Zoom desktop launches the installed native Linux app; Teams/Meet/Chat retain the optional separate browser profile. App compatibility requires checking the consumer’s actual camera menu and received frames.
 
 This build still does not broadcast processed camera video to meeting apps. Setup can publish a separate synthetic compatibility-test source. Source capture resolution and measured preview FPS/backend are distinct; the preview shows live FPS and actual GPU/CPU use. Opening from any monitor's bar uses one shared floating editor, with remembered camera, saved mirror/autostart choice and draggable/resizable window controls.
 

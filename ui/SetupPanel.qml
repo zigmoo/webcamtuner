@@ -17,6 +17,8 @@ Item {
     property string snapshotMessage: ""
     property bool openSnapshotsRequested: false
     property string diagnostics: ""
+    property var cameraSources: ({devices: [], pipewire: [], errors: [], output: {}})
+    property string sourceMessage: ""
     property string pluginRoot: Qt.resolvedUrl("../").toString().replace(/^file:\/\//, "").replace(/\/$/, "")
     function request(action) {
         if (controller.running) return
@@ -28,8 +30,23 @@ Item {
         controller.command = ["python3", pluginRoot + "/bin/browser-control.py", app]
         controller.running = true
     }
-    onVisibleChanged: if (visible) { request("status"); refreshRuntime() }
-    Component.onCompleted: { request("status"); refreshRuntime(); snapshotFolder.running = true }
+    onVisibleChanged: if (visible) { request("status"); refreshRuntime(); refreshSources() }
+    Component.onCompleted: { request("status"); refreshRuntime(); refreshSources(); snapshotFolder.running = true }
+    function refreshSources() { if (!sourceProcess.running) sourceProcess.running = true }
+    Process {
+        id: sourceProcess
+        command: ["python3", root.pluginRoot + "/bin/output-control.py", "inventory"]
+        stdout: StdioCollector { id: sourceOutput; waitForEnd: true }
+        onExited: function(code) {
+            try {
+                var value = JSON.parse(sourceOutput.text)
+                if (code !== 0 || !Array.isArray(value.devices) || !Array.isArray(value.pipewire)) throw new Error(value.message || "Could not read camera sources")
+                root.cameraSources = value
+                root.sourceMessage = value.errors.join("\n")
+            } catch (e) { root.sourceMessage = String(e.message || e) }
+        }
+    }
+    Timer { interval: 5000; repeat: true; running: root.visible; onTriggered: root.refreshSources() }
     function refreshRuntime() {
         if (runtimeProcess.running) return
         runtimeProcess.command = ["python3", pluginRoot + "/bin/runtime-control.py", "status"]
@@ -132,6 +149,33 @@ Item {
         }
         Plain { text:qsTr("Mirrored copies also appear at the front of Omasnap’s recent screenshot stack.");color:"#a9b4c1" }
         Plain { text:root.snapshotMessage;visible:text!=="";color:"#93c5aa" }
+        Plain { text: qsTr("Camera sources and output"); font.pixelSize: 22; font.bold: true }
+        Plain { text: qsTr("Meeting apps build their camera menus from a capture backend. These are the current V4L2 devices and PipeWire video sources in your session. An app’s permissions and backend determine which it can see.") }
+        Button { objectName: "refreshCameraSources"; text: sourceProcess.running ? qsTr("Refreshing sources…") : qsTr("Refresh camera sources"); enabled: !sourceProcess.running; onClicked: root.refreshSources() }
+        Plain { text: qsTr("V4L2 capture devices · /dev/video*"); font.bold: true }
+        Plain { text: qsTr("No accessible V4L2 capture devices found."); visible: root.cameraSources.devices.length === 0; color: "#a9b4c1" }
+        Repeater {
+            model: root.cameraSources.devices
+            delegate: Plain {
+                required property var modelData
+                text: modelData.name + " · " + modelData.path + (modelData.aliases.length ? "\n" + modelData.aliases.join("\n") : "")
+                font.pixelSize: 13
+            }
+        }
+        Plain { text: qsTr("PipeWire · Video/Source"); font.bold: true }
+        Plain { text: qsTr("No PipeWire video sources are registered."); visible: root.cameraSources.pipewire.length === 0; color: "#a9b4c1" }
+        Repeater {
+            model: root.cameraSources.pipewire
+            delegate: Plain {
+                required property var modelData
+                text: modelData.name + " · " + qsTr("node %1 · %2").arg(modelData.id).arg(modelData.state) + "\n" + modelData.node + (modelData.testOutput ? qsTr(" · WebcamTuner test pattern") : "")
+                font.pixelSize: 13
+                color: modelData.testOutput ? "#93c5aa" : "#e9ecef"
+            }
+        }
+        Plain { objectName: "publishedOutputIdentity"; text: root.cameraSources.output.published ? qsTr("WebcamTuner output: PipeWire node %1 (%2). Synthetic test pattern only.").arg(root.cameraSources.output.nodeId).arg(root.cameraSources.output.node) : qsTr("WebcamTuner output is stopped. Starting the test registers PipeWire node webcamtuner.test."); color: "#93c5aa" }
+        Plain { text: qsTr("Processed camera output is not connected yet. No WebcamTuner /dev/video device is created by this build."); color: "#a9b4c1" }
+        Plain { text: root.sourceMessage; visible: text !== ""; color: "#edb17a" }
         Plain { text: qsTr("Camera output setup"); font.pixelSize: 22; font.bold: true }
         Plain { text: qsTr("Compatibility test · This build publishes a moving test pattern as WebcamTuner. Your camera and background are not connected to this output yet.") }
         Plain { text: qsTr("The test runs in your user session without administrator access. Closing this window leaves it running. Stop it here; it also stops automatically after 30 minutes."); color: "#a9b4c1" }
@@ -141,13 +185,14 @@ Item {
         }
         Plain { objectName: "outputStatus"; text: root.feedback; color: "#93c5aa" }
         Plain { text: qsTr("In your meeting app's camera settings, look for WebcamTuner. A moving ball and timer confirm reception. Seeing the source here does not confirm that a particular app supports it.") }
-        Plain { text: qsTr("Browser compatibility is under test. No browser preferences or existing launchers are changed automatically."); color: "#a9b4c1" }
+        Button { objectName: "nativeZoomLauncher"; text: qsTr("Open Zoom desktop"); enabled: !controller.running; onClicked: root.openApp("zoom") }
+        Plain { text: qsTr("Zoom uses the installed Linux desktop app. Open its Video settings to check its actual camera menu."); color: "#a9b4c1" }
         Plain { text: qsTr("Optional compatible browser: these buttons open a separate Brave/Chromium profile with PipeWire camera support. Your normal browser settings stay unchanged. You may need to sign in again. Camera access still requires your permission.") }
         Flow {
             Layout.fillWidth: true
             spacing: 8
             Repeater {
-                model: ["Zoom", "Teams", "Meet", "Chat"]
+                model: ["Teams", "Meet", "Chat"]
                 Button {
                     required property string modelData
                     text: modelData

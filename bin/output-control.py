@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 """User-session synthetic publisher proof; never opens a physical camera."""
 import argparse
+import fcntl
 import json
+import os
 import shutil
+import struct
 import subprocess
 import time
 import sys
@@ -10,6 +13,66 @@ from pathlib import Path
 
 UNIT = 'webcamtuner-test.service'
 NODE = 'webcamtuner.test'
+
+
+def capture_info(path):
+    # VIDIOC_QUERYCAP only: never negotiate a format or start camera capture.
+    data = bytearray(104)
+    fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK | os.O_CLOEXEC)
+    try:
+        fcntl.ioctl(fd, 0x80685600, data, True)
+    finally:
+        os.close(fd)
+    driver, card, bus, version, capabilities, device_caps = struct.unpack_from('=16s32s32sIII', data)
+    caps = device_caps if capabilities & 0x80000000 else capabilities
+    if not caps & (0x1 | 0x1000):
+        return None
+    decode = lambda value: value.split(b'\0', 1)[0].decode('utf-8', errors='replace')
+    return {'name': decode(card), 'driver': decode(driver), 'bus': decode(bus)}
+
+
+def video_sources(dump):
+    if not isinstance(dump, list):
+        raise ValueError('PipeWire returned an invalid source list.')
+    sources = []
+    for item in dump:
+        if not isinstance(item, dict) or item.get('type') != 'PipeWire:Interface:Node':
+            continue
+        info = item.get('info') or {}
+        props = info.get('props') or {}
+        if props.get('media.class') != 'Video/Source':
+            continue
+        sources.append({'id': item.get('id'), 'serial': props.get('object.serial'),
+                        'name': props.get('node.description') or props.get('node.nick') or props.get('node.name', ''),
+                        'node': props.get('node.name', ''), 'state': info.get('state', 'unknown'),
+                        'path': props.get('api.v4l2.path', ''), 'testOutput': props.get('node.name') == NODE})
+    return sorted(sources, key=lambda item: (str(item['name']).lower(), str(item['id'])))
+
+
+def inventory():
+    devices, errors, aliases = [], [], {}
+    for alias in sorted(Path('/dev/v4l/by-id').glob('*')):
+        aliases.setdefault(str(alias.resolve()), []).append(str(alias))
+    for entry in sorted(Path('/sys/class/video4linux').glob('video*')):
+        path = '/dev/' + entry.name
+        try:
+            info = capture_info(path)
+            if info:
+                devices.append(dict(info, path=path, aliases=aliases.get(path, [])))
+        except OSError as error:
+            errors.append(path + ': ' + (error.strerror or str(error)))
+    nodes = []
+    try:
+        dump = run(['pw-dump'])
+        if dump.returncode:
+            raise RuntimeError('Cannot connect to your PipeWire session.')
+        nodes = video_sources(json.loads(dump.stdout))
+    except (OSError, RuntimeError, ValueError, subprocess.TimeoutExpired) as error:
+        errors.append(str(error)[:500])
+    target = next((item for item in nodes if item['testOutput']), None)
+    return {'devices': devices, 'pipewire': nodes, 'errors': errors,
+            'output': {'name': 'WebcamTuner', 'node': NODE, 'nodeId': target['id'] if target else None,
+                       'published': target is not None, 'kind': 'Synthetic test pattern', 'processed': False}}
 
 
 def run(args, timeout=10):
@@ -74,10 +137,10 @@ def stop():
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=['status', 'start-test', 'stop-test', 'diagnostics'])
+    parser.add_argument('action', choices=['status', 'start-test', 'stop-test', 'diagnostics', 'inventory'])
     args = parser.parse_args()
     try:
-        result = start() if args.action == 'start-test' else stop() if args.action == 'stop-test' else status()
+        result = inventory() if args.action == 'inventory' else start() if args.action == 'start-test' else stop() if args.action == 'stop-test' else status()
         if args.action == 'diagnostics':
             result['log'] = run(['journalctl', '--user', '-u', UNIT, '-n', '20', '--no-pager']).stdout[-6000:]
         print(json.dumps(result))

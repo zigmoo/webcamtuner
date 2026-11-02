@@ -17,6 +17,10 @@ Rectangle {
     property bool dirty: false
     property bool busy: false
     property bool savePending: false
+    property var controlIntents: []
+    property bool mirrorQueued: false
+    property bool cameraQueued: false
+    property bool autostartQueued: false
     property bool saveFailed: false
     property bool automaticWritesPaused: false
     property int editGeneration: 0
@@ -132,12 +136,12 @@ Rectangle {
     function autosaveWhenReady() {
         if (!dirty || automaticWritesPaused || saveFailed || !document) return
         if (cropSaveFailed || labelSaveFailed) return
-        if (busy || savePending || cameraPending || mirrorPending || autostartPending || cropInFlight !== null || Object.keys(cropDrafts).length || labelEditing || labelInFlight !== null || Object.keys(labelDrafts).length) { autosave.restart(); return }
+        if (busy || savePending || controlIntents.length || cameraPending || mirrorPending || autostartPending || cropInFlight !== null || Object.keys(cropDrafts).length || labelEditing || labelInFlight !== null || Object.keys(labelDrafts).length) { autosave.restart(); return }
         if (!profileName.trim() || (backgroundMode === "image" && !imageReady)) return
         save()
     }
     function prepareUpdate() {
-        if (busy || savePending || cropInFlight !== null || labelInFlight !== null || labelEditing) return null
+        if (busy || savePending || controlIntents.length || cropInFlight !== null || labelInFlight !== null || labelEditing) return null
         automaticWritesPaused = true
         autosave.stop(); cropSave.stop(); labelSave.stop()
         return exportDraft()
@@ -312,7 +316,9 @@ Rectangle {
     function accept(action, result) {
         if (action === "background-crop") {
             var drafts = Object.assign({}, cropDrafts)
-            if (JSON.stringify(drafts[result.path]) === JSON.stringify(result.crop)) delete drafts[result.path]
+            var path=cropInFlight?cropInFlight.path:result.path
+            var pending=drafts[path],confirmed=result.crop
+            if(pending && confirmed && Math.abs(pending.zoom-confirmed.zoom)<1e-12 && Math.abs(pending.centerX-confirmed.centerX)<1e-12 && Math.abs(pending.centerY-confirmed.centerY)<1e-12)delete drafts[path]
             cropDrafts = drafts
             cropInFlight = null
             var updated = JSON.parse(JSON.stringify(backgroundLibrary))
@@ -475,7 +481,8 @@ Rectangle {
         request("save", ["--document", JSON.stringify(next)])
     }
     function toggleMirror() {
-        if (!document || busy || mirrorPending || cameraPending || autostartPending) return
+        if (!document || mirrorPending || mirrorQueued || cameraPending || autostartPending) return
+        if(busy||savePending){mirrorQueued=true;controlIntents=controlIntents.concat([{kind:"mirror"}]);controlIntentTimer.restart();return}
         var next = JSON.parse(JSON.stringify(document))
         next.profiles[profileIndex].mirror = !mirror
         mirrorPending = true
@@ -483,7 +490,8 @@ Rectangle {
         request("save", ["--document", JSON.stringify(next)])
     }
     function toggleAutostart() {
-        if (!document || busy || mirrorPending || cameraPending || autostartPending) return
+        if (!document || mirrorPending || cameraPending || autostartPending || autostartQueued) return
+        if(busy||savePending){autostartQueued=true;controlIntents=controlIntents.concat([{kind:"autostart"}]);controlIntentTimer.restart();return}
         var next = JSON.parse(JSON.stringify(document))
         next.profiles[profileIndex].autostartCamera = !autostartCamera
         autostartPending = true
@@ -527,7 +535,8 @@ Rectangle {
         selectCamera(id)
     }
     function selectCamera(id) {
-        if (!document || busy || mirrorPending || cameraPending || autostartPending) return
+        if (!document || mirrorPending || cameraPending || autostartPending || cameraQueued) return
+        if(busy||savePending){cameraQueued=true;controlIntents=controlIntents.concat([{kind:"camera",camera:id}]);controlIntentTimer.restart();return}
         var next = JSON.parse(JSON.stringify(document))
         next.lastCamera = CameraChoice.keyFor(id, cameraAliases)
         next.profiles[profileIndex].source = { kind: "local", host: "", camera: id }
@@ -547,6 +556,19 @@ Rectangle {
     }
     MediaDevices { id: devices; onVideoInputsChanged: cameraRefresh.restart() }
     Timer { id: autosave; interval: 750; onTriggered: root.autosaveWhenReady() }
+    Timer {
+        id:controlIntentTimer
+        interval:60
+        onTriggered:{
+            if(root.busy||root.savePending||root.mirrorPending||root.cameraPending||root.autostartPending){restart();return}
+            if(!root.controlIntents.length)return
+            var intent=root.controlIntents[0];root.controlIntents=root.controlIntents.slice(1)
+            if(intent.kind==="mirror"){root.mirrorQueued=false;root.toggleMirror()}
+            else if(intent.kind==="autostart"){root.autostartQueued=false;root.toggleAutostart()}
+            else{root.cameraQueued=false;root.selectCamera(intent.camera)}
+            if(root.controlIntents.length)restart()
+        }
+    }
     Timer { id: cropSave; interval: 400; onTriggered: root.flushBackgroundCrop() }
     Timer { id: labelSave; interval: 400; onTriggered: root.flushLabel() }
     Timer { id: libraryRefresh; interval: 200; onTriggered: root.refreshBackgrounds() }
@@ -588,9 +610,9 @@ Rectangle {
                 Layout.preferredWidth: Math.min(160, implicitWidth)
             }
             Button { visible:root.saveFailed||root.labelSaveFailed; text:qsTr("Retry"); enabled:!root.busy; onClicked:{if(root.labelSaveFailed){root.labelSaveFailed=false;root.flushLabel()}else root.save()} }
-            Button { text: qsTr("Reload saved"); enabled: !root.busy; onClicked: root.dirty ? discardDialog.open() : root.request("read", []) }
+            Button { objectName: "reloadSaved"; text: qsTr("Reload saved"); onClicked: root.dirty ? discardDialog.open() : root.request("read", []) }
             Item { Layout.fillWidth: true }
-            Button { text: qsTr("Remote cameras"); enabled: !root.busy; onClicked: root.request("remote", []) }
+            Button { objectName: "remoteCameras"; text: qsTr("Remote cameras"); onClicked: root.request("remote", []) }
         }
         LabelText { id: saveStatus; objectName: "saveStatus"; text: root.message; color: root.accent; Layout.fillWidth: true; maximumLineCount: 3; elide: Text.ElideRight }
         LabelText { visible: root.remoteSummary !== ""; text: root.remoteSummary; Layout.fillWidth: true; font.pixelSize: 12 }
@@ -654,8 +676,8 @@ Rectangle {
                         objectName: "cameraChoice"; Layout.fillWidth: true
                         model: root.cameras; textRole: "description"
                         currentIndex: root.cameraIndex()
-                        enabled: root.cameraChoiceReady && !root.busy && !root.cameraPending && !root.mirrorPending && !root.autostartPending
-                        displayText: root.cameraPending ? qsTr("Selecting camera…") : root.cameraChoiceReady && root.cameras.length === 0 ? qsTr("No webcam connected") : currentIndex < 0 ? qsTr("Detecting connected webcams…") : currentText
+                        enabled: root.cameraChoiceReady && !root.cameraQueued && !root.mirrorQueued && !root.autostartQueued && !root.cameraPending && !root.mirrorPending && !root.autostartPending
+                        displayText: root.cameraPending || root.cameraQueued ? qsTr("Selecting camera…") : root.cameraChoiceReady && root.cameras.length === 0 ? qsTr("No webcam connected") : currentIndex < 0 ? qsTr("Detecting connected webcams…") : currentText
                         onActivated: function(index) {
                             var id = String(root.cameras[index].id)
                             currentIndex = Qt.binding(function() { return root.cameraIndex() })
@@ -818,9 +840,9 @@ Rectangle {
                 CheckBox {
                     id: mirrorControl
                     objectName: "mirrorToggle"
-                    text: root.mirrorPending ? qsTr("Mirror (saving…)") : qsTr("Mirror")
+                    text: root.mirrorPending || root.mirrorQueued ? qsTr("Mirror (saving…)") : qsTr("Mirror")
                     checked: root.mirror
-                    enabled: root.document !== null && !root.busy && !root.mirrorPending && !root.cameraPending && !root.autostartPending
+                    enabled: root.document !== null && !root.mirrorQueued && !root.cameraQueued && !root.autostartQueued && !root.mirrorPending && !root.cameraPending && !root.autostartPending
                     nextCheckState: function() { return checkState }
                     onClicked: root.toggleMirror()
                 }
@@ -921,9 +943,9 @@ Rectangle {
             CheckBox {
                 objectName: "autostartToggle"
                 visible: root.section === "all" || root.section === "setup"
-                text: root.autostartPending ? qsTr("Autostart camera (saving…)") : qsTr("Autostart camera")
+                text: root.autostartPending || root.autostartQueued ? qsTr("Autostart camera (saving…)") : qsTr("Autostart camera")
                 checked: root.autostartCamera
-                enabled: root.document !== null && !root.busy && !root.mirrorPending && !root.cameraPending && !root.autostartPending
+                enabled: root.document !== null && !root.mirrorQueued && !root.cameraQueued && !root.autostartQueued && !root.mirrorPending && !root.cameraPending && !root.autostartPending
                 nextCheckState: function() { return checkState }
                 onClicked: root.toggleAutostart()
             }

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Open an opt-in, separate calling-browser profile with PipeWire cameras."""
+"""Open native Zoom or a separate calling-browser profile for other apps."""
 import argparse
 import json
 import os
@@ -8,28 +8,45 @@ import shutil
 import subprocess
 import uuid
 
-URLS = {'zoom': 'https://app.zoom.us/wc/home', 'teams': 'https://teams.microsoft.com/',
+URLS = {'teams': 'https://teams.microsoft.com/',
         'meet': 'https://meet.google.com/', 'chat': 'https://chat.google.com/'}
-parser = argparse.ArgumentParser(description=__doc__)
-parser.add_argument('app', choices=URLS)
-args = parser.parse_args()
-try:
-    browser = shutil.which('brave') or shutil.which('chromium')
-    if not browser:
-        raise RuntimeError('A supported browser is not installed. Brave or Chromium is needed for this test route.')
-    data = Path(os.environ.get('XDG_DATA_HOME') or Path.home() / '.local/share')
-    if not data.is_absolute():
-        raise RuntimeError('XDG_DATA_HOME must be an absolute path.')
-    profile = data / 'webcamtuner' / 'calling-browser'
-    profile.mkdir(mode=0o700, parents=True, exist_ok=True)
+def launch(app):
+    if app == 'zoom':
+        zoom = shutil.which('zoom')
+        if not zoom:
+            raise RuntimeError('Zoom desktop is not installed. Install the Linux Zoom package first.')
+        command = [zoom]
+        message = 'Zoom desktop launch requested. Open Video settings to check its camera menu. WebcamTuner output compatibility still needs verification.'
+    else:
+        browser = shutil.which('brave') or shutil.which('chromium')
+        if not browser:
+            raise RuntimeError('A supported browser is not installed. Brave or Chromium is needed for this test route.')
+        data = Path(os.environ.get('XDG_DATA_HOME') or Path.home() / '.local/share')
+        if not data.is_absolute():
+            raise RuntimeError('XDG_DATA_HOME must be an absolute path.')
+        profile = data / 'webcamtuner' / 'calling-browser'
+        profile.mkdir(mode=0o700, parents=True, exist_ok=True)
+        command = [browser, '--user-data-dir=' + str(profile), '--no-first-run',
+                   '--no-default-browser-check', '--enable-features=WebRtcPipeWireCamera', URLS[app]]
+        message = 'Browser launch requested. Sign in if needed, then check camera settings. App compatibility still needs verification.'
     result = subprocess.run(['systemd-run', '--user', '--collect',
-                             '--unit=webcamtuner-browser-' + uuid.uuid4().hex[:12],
-                             browser, '--user-data-dir=' + str(profile), '--no-first-run',
-                             '--no-default-browser-check', '--enable-features=WebRtcPipeWireCamera',
-                             URLS[args.app]], capture_output=True, text=True, timeout=10)
+                             '--unit=webcamtuner-' + app + '-' + uuid.uuid4().hex[:12],
+                             *command], capture_output=True, text=True, timeout=10)
     if result.returncode:
         raise RuntimeError(result.stderr.strip()[:1000])
-    print(json.dumps({'message': 'Browser launch requested. Sign in if needed, then select WebcamTuner in camera settings. App compatibility still needs verification.'}))
-except (OSError, RuntimeError, subprocess.TimeoutExpired) as error:
-    print(json.dumps({'message': str(error)[:1000]}))
-    raise SystemExit(1)
+    return {'message': message}
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('app', choices=['zoom', *URLS])
+    args = parser.parse_args()
+    try:
+        print(json.dumps(launch(args.app)))
+    except (OSError, RuntimeError, subprocess.TimeoutExpired) as error:
+        print(json.dumps({'message': str(error)[:1000]}))
+        raise SystemExit(1)
+
+
+if __name__ == '__main__':
+    main()
