@@ -2,11 +2,21 @@
   "schemaVersion": 1,
   "id": "moo.webcamtuner",
   "name": "WebcamTuner",
-  "version": "0.6.2",
+  "version": "0.7.0",
   "author": "Jason Benjamin Ziegler Sr",
   "license": "Apache-2.0 AND GPL-3.0-only",
-  "description": "Persistent framing and profiles with local image/blur background preview. Virtual-camera output is planned.",
-  "kinds": ["bar-widget"],
-  "entryPoints": { "barWidget": "BarWidget.qml" },
-  "barWidget": { "displayName": "WebcamTuner", "description": "Frame a camera and save appearance profiles", "category": "Devices", "allowMultiple": false, "defaultSection": "right" }
+  "description": "Persistent framing and background preview, with a user-session virtual-camera compatibility test.",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "WebcamTuner",
+    "description": "Frame a camera and save appearance profiles",
+    "category": "Devices",
+    "allowMultiple": false,
+    "defaultSection": "right"
+  }
 }

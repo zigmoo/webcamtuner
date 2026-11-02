@@ -18,6 +18,8 @@ Rectangle {
     property bool busy: false
     property string message: qsTr("Loading saved profiles…")
     property bool previewOn: false
+    property string section: "all"
+    property Component setupContent: null
     property bool testing: false
     property string remoteSummary: ""
     property real zoom: 1
@@ -286,6 +288,9 @@ Rectangle {
                 }
                 Button { text: qsTr("New"); enabled: !root.dirty && !root.busy && root.document && root.document.profiles.length < 30; onClicked: root.newProfile() }
             }
+            ColumnLayout {
+                Layout.fillWidth: true
+                visible: root.section === "all" || root.section === "camera"
             ComboBox {
                 objectName: "cameraChoice"; Layout.fillWidth: true
                 model: root.cameras; textRole: "description"
@@ -388,7 +393,11 @@ Rectangle {
                     : qsTr("Start preview to see the negotiated capture resolution and available crop detail.")
                 font.pixelSize: 12; color: "#a9b4c1"; Layout.fillWidth: true
             }
+            }
             Rectangle { Layout.fillWidth: true; height: 1; color: "#39414b" }
+            ColumnLayout {
+                Layout.fillWidth: true
+                visible: root.section === "all" || root.section === "background"
             LabelText { text: qsTr("Background"); font.bold: true }
             RowLayout {
                 Repeater {
@@ -412,14 +421,17 @@ Rectangle {
                 Button { text: qsTr("Browse…"); onClicked: imageDialog.open() }
             }
             LabelText { objectName: "backgroundFeedback"; visible: root.backgroundMode !== "none"; text: root.backgroundFeedback; color: root.backgroundMode === "image" && !root.imageReady ? "#f1b58a" : root.accent; Layout.fillWidth: true }
+            }
             CheckBox {
                 objectName: "restoreToggle"
+                visible: root.section === "all" || root.section === "setup"
                 text: qsTr("Restore this profile when WebcamTuner starts")
                 checked: root.restoreOnStart
                 onClicked: { root.restoreOnStart = checked; root.mark() }
             }
             CheckBox {
                 objectName: "autostartToggle"
+                visible: root.section === "all" || root.section === "setup"
                 text: root.autostartPending ? qsTr("Autostart camera (saving…)") : qsTr("Autostart camera")
                 checked: root.autostartCamera
                 enabled: root.document !== null && !root.busy && !root.mirrorPending && !root.cameraPending && !root.autostartPending
@@ -432,11 +444,19 @@ Rectangle {
                 Item { Layout.fillWidth: true }
                 Button { text: qsTr("Remote cameras"); enabled: !root.busy; onClicked: root.request("remote", []) }
             }
+            Loader {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 560
+                visible: root.section === "setup"
+                active: root.setupContent !== null
+                sourceComponent: root.setupContent
+            }
             LabelText { objectName: "saveStatus"; text: root.message; color: root.accent; Layout.fillWidth: true }
             LabelText { visible: root.remoteSummary !== ""; text: root.remoteSummary; Layout.fillWidth: true; font.pixelSize: 12 }
             Rectangle { Layout.fillWidth: true; height: 1; color: "#39414b" }
             Button {
                 objectName: "outputHelpToggle"
+                visible: root.section === "all" || root.section === "setup"
                 text: (root.outputHelpExpanded ? "▾  " : "▸  ") + qsTr("Use in other apps")
                 Accessible.name: qsTr("Use in other apps")
                 Layout.fillWidth: true
@@ -444,14 +464,14 @@ Rectangle {
                 contentItem: LabelText { text: parent.text; font.bold: true; verticalAlignment: Text.AlignVCenter }
                 onClicked: root.outputHelpExpanded = !root.outputHelpExpanded
             }
-            LabelText { text: qsTr("Output: preview only"); color: root.accent; Layout.fillWidth: true }
+            LabelText { visible: root.section === "all" || root.section === "setup"; text: qsTr("Camera processing: preview only"); color: root.accent; Layout.fillWidth: true }
             ColumnLayout {
                 objectName: "outputHelpBody"
                 Layout.fillWidth: true
-                visible: root.outputHelpExpanded
+                visible: root.outputHelpExpanded && (root.section === "all" || root.section === "setup")
                 spacing: 10
                 LabelText {
-                    text: qsTr("This version shows your processed camera here, but does not publish a WebcamTuner camera yet. Teams, Zoom, Meet and other webcam apps cannot receive these effects until virtual-camera output is added.")
+                    text: qsTr("Camera effects currently stay in the preview. Setup can publish a separate synthetic test camera; your processed camera is not connected to it yet.")
                     Layout.fillWidth: true
                 }
                 LabelText {

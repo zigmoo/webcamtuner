@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Controls
 import Quickshell
 import Quickshell.Hyprland
 
@@ -36,6 +37,13 @@ FloatingWindow {
         collapsed = false
         visible = true
         if (!editor.document) bridge.request("read", [])
+    }
+    function openSetup() {
+        openEditor()
+        // Opening setup is not an instruction to capture a physical camera.
+        editor.autostartRequested = false
+        editor.previewOn = false
+        tabs.currentIndex = 2
     }
     function closeEditor() { editor.previewOn = false; visible = false }
     function toggleCollapse() {
@@ -76,13 +84,34 @@ FloatingWindow {
         onMinimizeRequested: window.toggleCollapse()
         onCloseRequested: window.closeEditor()
     }
-    Editor {
-        id: editor
+    TabBar {
+        id: tabs
+        objectName: "navigationTabs"
         anchors.top: titlebar.bottom
         anchors.left: parent.left
         anchors.right: parent.right
-        anchors.bottom: parent.bottom
         visible: !window.collapsed
+        TabButton { text: qsTr("Camera") }
+        TabButton { text: qsTr("Background") }
+        TabButton { text: qsTr("Setup") }
+        TabButton { text: qsTr("About") }
+    }
+    AboutPanel {
+        anchors.top: tabs.bottom
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        visible: !window.collapsed && tabs.currentIndex === 3
+    }
+    Editor {
+        id: editor
+        anchors.top: tabs.bottom
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        visible: !window.collapsed && tabs.currentIndex !== 3
+        section: ["camera", "background", "setup", "about"][tabs.currentIndex]
+        setupContent: Component { SetupPanel {} }
         panelOpen: window.visible
         busy: bridge.busy
         color: window.color

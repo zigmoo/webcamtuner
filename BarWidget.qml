@@ -33,6 +33,7 @@ BarWidget {
         target: root.moduleName
         function open(): void { root.open() }
         function close(): void { root.close() }
+        function setup(): void { panel.openSetup() }
         function toggle(): void { root.toggle() }
         function minimize(): void { if (root.opened && !panel.collapsed) panel.toggleCollapse() }
         function status(): string {

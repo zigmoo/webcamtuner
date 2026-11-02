@@ -1,6 +1,6 @@
 {
   "name": "webcamtuner",
-  "version": "0.6.2",
+  "version": "0.7.0",
   "private": true,
   "type": "module",
   "description": "Persistent webcam framing and appearance for the Omarchy desktop",
@@ -11,6 +11,11 @@
     "stage": "python3 bin/stage.py",
     "setup:preview": "bash bin/setup-preview"
   },
-  "dependencies": { "incur": "0.5.1" },
-  "devDependencies": { "@types/node": "^25.0.0", "typescript": "^5.9.3" }
+  "dependencies": {
+    "incur": "0.5.1"
+  },
+  "devDependencies": {
+    "@types/node": "^25.0.0",
+    "typescript": "^5.9.3"
+  }
 }
