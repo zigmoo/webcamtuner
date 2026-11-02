@@ -1,10 +1,35 @@
 # WebcamTuner
 
-Public source: [zigmoo/webcamtuner](https://github.com/zigmoo/webcamtuner). Application source is licensed under Apache-2.0; the bundled Robust Video Matting model retains its separate GPL-3.0 license and provenance in models/rvm/. Build and stage the source as described below before installing the plugin.
+Public source: [zigmoo/webcamtuner](https://github.com/zigmoo/webcamtuner). Application source is licensed under Apache-2.0; the bundled Robust Video Matting model retains its separate GPL-3.0 license and provenance in models/rvm/. See [Install](#install) for the marketplace checkout, then build the controller in that checkout. The [Build and review](#build-and-review) steps are for working in this source tree.
 
 An Omarchy plugin for persistent webcam framing and appearance profiles. Local camera preview implementation for DIL-3027 (v0.6).
 
 The current preview supports scroll/drag framing, named profiles, persistent crop/background settings, local camera preview with a saved autostart choice with person segmentation and image replacement/blur, and optional remote discovery through the existing webcam_tool. It does not broadcast a virtual camera yet. Opening WebcamTuner starts the remembered camera preview by default. Uncheck Autostart camera below the restore-profile option to start with the camera off instead; Preview camera remains available manually. The bar icon opens a normal floating window; drag the fixed title bar or its grip to move it and resize it with the window manager.
+
+## Install
+
+`omarchy plugin add` clones this repository as the plugin. The bar widget is in the repository root. The controller is TypeScript and is not committed as a build, so build it inside the installed checkout before enabling the plugin. `setup:preview` prepares a user-local ONNX Runtime. It does not download the model. The bundled model stays in `models/rvm`.
+
+Requires Node.js 22+, npm, Bun, Qt Multimedia, Quickshell, and Python 3 with OpenCV, NumPy, and Pillow. `webcam_tool` is optional and is used only for remote inventory.
+
+```bash
+omarchy plugin add https://github.com/zigmoo/webcamtuner.git
+cd ~/.config/omarchy/plugins/moo.webcamtuner
+npm ci --ignore-scripts --no-audit --no-fund
+npm run build
+npm run setup:preview
+omarchy plugin enable moo.webcamtuner
+```
+
+Profiles are stored under `$XDG_CONFIG_HOME/webcamtuner/profiles.json`. Installation does not replace them.
+
+## Remove
+
+```bash
+omarchy plugin remove moo.webcamtuner
+```
+
+Removal deletes the plugin checkout. It leaves profiles and the user-local ONNX Runtime in place.
 
 ## Build and review
 
