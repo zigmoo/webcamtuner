@@ -35,8 +35,9 @@ ColumnLayout {
     function closeEditor() { cropDialog.close() }
     RowLayout {
         Layout.fillWidth: true
-        RadioButton { objectName: "cropCamera"; text: qsTr("Crop camera"); checked: root.target === "camera"; onClicked: root.target = "camera" }
-        RadioButton { objectName: "cropBackground"; text: qsTr("Crop background"); checked: root.target === "background"; enabled: root.backgroundAvailable; onClicked: root.target = "background" }
+        Label { text: qsTr("Adjust:"); color: "#e9ecef" }
+        RadioButton { objectName: "cropCamera"; text: qsTr("Camera"); checked: root.target === "camera"; onClicked: root.target = "camera" }
+        RadioButton { objectName: "cropBackground"; text: qsTr("Background"); checked: root.target === "background"; enabled: root.backgroundAvailable; onClicked: root.target = "background" }
         Item { Layout.fillWidth: true }
     }
     RowLayout {

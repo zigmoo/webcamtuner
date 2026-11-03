@@ -834,7 +834,7 @@ Rectangle {
                 }
                 LabelText {
                     id: framingGuide
-                    text: qsTr("Drag yourself to position your image. Choose Crop camera or Crop background below; Ctrl+scroll changes the selected crop.")
+                    text: qsTr("Drag camera image as needed.\nSelect Camera or Background below. Use the slider or Ctrl+scroll to zoom.")
                     color: "#a9b4c1"
                     Layout.fillWidth: true
                 }
