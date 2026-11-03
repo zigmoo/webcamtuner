@@ -29,7 +29,7 @@ Rectangle {
     property bool previewOn: false
     property bool resumeOutputPreview: false
     property var outputControl: noOutput
-    QtObject { id:noOutput;property bool checked:true;property bool published:false;property bool busy:false;property int configurationRevision:0 }
+    QtObject { id:noOutput;property bool checked:true;property bool published:false;property bool busy:false;property bool cameraSwitching:false;property string cameraFeedback:"";property int configurationRevision:0 }
     readonly property bool publishing: root.outputControl.published
     property string section: "all"
     property var backgroundLibrary: ({directory: "", items: []})
@@ -191,8 +191,8 @@ Rectangle {
         }
     }
     function labelIdentity(value) {
-        var spec=Object.assign({enabled:false,opacity:.75,text:"",x:.02,y:.96,fontFamily:"sans",fontSize:.034,bold:false,italic:false,allCaps:false},value)
-        return JSON.stringify([spec.enabled,spec.opacity,spec.text,spec.x,spec.y,spec.fontFamily,spec.fontSize,spec.bold,spec.italic,spec.allCaps])
+        var spec=Object.assign({enabled:false,opacity:.75,text:"",x:.02,y:.96,fontFamily:"sans",fontSize:.034,bold:false,italic:false,allCaps:false,color:"#ffffff"},value)
+        return JSON.stringify([spec.enabled,spec.opacity,spec.text,spec.x,spec.y,spec.fontFamily,spec.fontSize,spec.bold,spec.italic,spec.allCaps,spec.color.toLowerCase()])
     }
     function installLibrary(value) {
         if (galleryLabelEditing) { deferredLibrary=value; return }
@@ -394,7 +394,7 @@ Rectangle {
             document = result
             if (cameraPending && action === "save") {
                 cameraPending = false
-                if (savedCamera !== pendingCamera) previewOn = false
+                if (savedCamera !== pendingCamera && !publishing) previewOn = false
                 savedCamera = pendingCamera
                 sourceKind = "local"; sourceHost = ""
                 message = qsTr("Camera ready")
@@ -588,6 +588,7 @@ Rectangle {
         function onCheckedChanged(){root.maybeAutostart()}
         function onPublishedChanged(){root.maybeAutostart()}
         function onFailed(message){root.message=message}
+        function onCameraRejected(camera){root.selectCamera(camera)}
     }
     Loader {
         id: processor
@@ -694,8 +695,8 @@ Rectangle {
                         objectName: "cameraChoice"; Layout.fillWidth: true
                         model: root.cameras; textRole: "description"
                         currentIndex: root.cameraIndex()
-                        enabled: !root.publishing && !root.outputControl.busy && root.cameraChoiceReady && !root.cameraQueued && !root.mirrorQueued && !root.autostartQueued && !root.cameraPending && !root.mirrorPending && !root.autostartPending
-                        displayText: root.cameraPending || root.cameraQueued ? qsTr("Selecting camera…") : root.cameraChoiceReady && root.cameras.length === 0 ? qsTr("No webcam connected") : currentIndex < 0 ? qsTr("Detecting connected webcams…") : currentText
+                        enabled: !root.outputControl.busy && !root.outputControl.cameraSwitching && root.cameraChoiceReady && !root.cameraQueued && !root.mirrorQueued && !root.autostartQueued && !root.cameraPending && !root.mirrorPending && !root.autostartPending
+                        displayText: root.cameraPending || root.cameraQueued || root.outputControl.cameraSwitching ? qsTr("Selecting camera…") : root.cameraChoiceReady && root.cameras.length === 0 ? qsTr("No webcam connected") : currentIndex < 0 ? qsTr("Detecting connected webcams…") : currentText
                         onActivated: function(index) {
                             var id = String(root.cameras[index].id)
                             currentIndex = Qt.binding(function() { return root.cameraIndex() })
@@ -714,10 +715,16 @@ Rectangle {
                         onClicked: processor.item.takeSnapshot()
                     }
                 }
+                LabelText {
+                    text: root.outputControl.cameraFeedback || ""
+                    visible: text !== ""
+                    Layout.fillWidth: true
+                    color: root.accent
+                }
                 Item {
                     objectName: "cameraPreviewArea"
                     Layout.fillWidth: true
-                    Layout.preferredHeight: Math.min(width * 9 / 16, Math.max(90, editorScroll.availableHeight
+                    Layout.preferredHeight: Math.min(width * 9 / 16, Math.max(Math.min(200, width * 9 / 16), editorScroll.availableHeight
                         - pageIntro.implicitHeight - profileRow.implicitHeight - cameraSelectorRow.implicitHeight
                         - framingGuide.implicitHeight - cropTool.implicitHeight - mirrorControl.implicitHeight - labelControls.implicitHeight
                         - captureInfo.implicitHeight - 98))

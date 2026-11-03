@@ -12,6 +12,9 @@ Item {
     readonly property bool published: !!state.published && !!state.processed
     readonly property bool busy: (activeAction !== "" && activeAction !== "status" && activeAction !== "zoom-status") || pending.some(function(item){return item.action!=="status"&&item.action!=="zoom-status"}) || startDelay.running || stopping
     property string feedback: ""
+    property string cameraFeedback: ""
+    readonly property bool cameraSwitching: published && !!configuration && !!state.camera && state.camera !== configuration.camera && (update.running || updateDelay.running)
+    property var configuring: null
     property string activeAction: ""
     property bool stopping: false
     property var pending: []
@@ -21,6 +24,7 @@ Item {
     signal started()
     signal stopped()
     signal failed(string message)
+    signal cameraRejected(string camera)
 
     onConfigurationChanged: { configurationRevision++; if (enabled && published && configuration) updateDelay.restart() }
     onPanelOpenChanged: if (panelOpen&&enabled) { request("status"); request("zoom-status") }
@@ -67,14 +71,29 @@ Item {
     function configure() {
         if(!enabled || !published || !configuration)return
         if(update.running){updateDelay.restart();return}
-        update.command=["python3",pluginRoot+"/bin/stream-client.py","--configure",JSON.stringify(Object.assign({},configuration,{configurationRevision:configurationRevision}))]
+        configuring=Object.assign({},configuration,{configurationRevision:configurationRevision})
+        if(state.camera && state.camera!==configuration.camera)cameraFeedback=qsTr("Switching camera…")
+        update.command=["python3",pluginRoot+"/bin/stream-client.py","--configure",JSON.stringify(configuring),"--wait-applied"]
         update.running=true
     }
     Process {
         id:update
         stdout:StdioCollector {id:updateResult;waitForEnd:true}
         onExited:function(code){
-            if(code!==0){try{root.feedback=JSON.parse(updateResult.text).error||qsTr("Output settings could not be applied")}catch(e){root.feedback=qsTr("Output settings could not be applied")}}
+            try{
+                var result=JSON.parse(updateResult.text)
+                if(code!==0){
+                    root.feedback=result.error||qsTr("Output settings could not be applied")
+                    if(result.camera && root.configuring && result.camera!==root.configuring.camera){
+                        root.cameraFeedback=root.feedback+qsTr(" The previous camera is still live.")
+                        if(root.configuration.camera===root.configuring.camera)root.cameraRejected(result.camera)
+                    }
+                    root.failed(root.feedback)
+                }else{
+                    root.state=result
+                    root.cameraFeedback=""
+                }
+            }catch(e){root.feedback=qsTr("Output settings could not be confirmed");root.failed(root.feedback)}
         }
     }
     Process {

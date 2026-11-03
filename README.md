@@ -2,9 +2,9 @@
 
 Public source: [zigmoo/webcamtuner](https://github.com/zigmoo/webcamtuner). Application source is licensed under Apache-2.0; the bundled Robust Video Matting model retains its separate GPL-3.0 license and provenance in models/rvm/. See [Install](#install) for the marketplace checkout, then build the controller in that checkout. The [Build and review](#build-and-review) steps are for working in this source tree.
 
-An Omarchy plugin for persistent webcam framing and appearance profiles. Processed camera preview and composition editor for DIL-3027 (v0.9.1).
+An Omarchy plugin for persistent webcam framing and appearance profiles. Processed camera preview and composition editor for DIL-3027 (v0.9.2).
 
-Camera is the composition workspace: choose the remembered webcam, preview the composite, select Adjust: Camera or Background for the shared framing controls, and take a full-resolution processed snapshot. Drag the person to position them; enable Show label beneath the preview to drag or double-click its text and change font, bold, italic, ALL CAPS, size and opacity. Profiles and per-image appearance save automatically. Background contains image selection/import, captions and library management. Setup contains runtime, snapshot-mirror, Start/Stop output and native Zoom-adapter controls. Test shows independent PipeWire and V4L2 readbacks with measured receive FPS. About includes the version, author and source.
+Camera is the composition workspace: choose the remembered webcam, preview the composite, select Adjust: Camera or Background for the shared framing controls, and take a full-resolution processed snapshot. Drag the person to position them; enable Show label beneath the preview to drag or double-click its text and change font, bold, italic, ALL CAPS, size, color and opacity. Profiles and per-image appearance save automatically. Background contains image selection/import, captions and library management. Setup contains runtime, snapshot-mirror, Start/Stop output and native Zoom-adapter controls. Test shows independent PipeWire and V4L2 readbacks with measured receive FPS. About includes the version, author and source.
 
 Snapshots are kept in $XDG_DATA_HOME/webcamtuner/snapshots. The Setup checkbox Mirror snapshots to the OS screenshot folder defaults on; it adds a PNG copy to the Omasnap folder and recent-images shelf. Turning it off keeps snapshots local. Existing images in older snapshot folders are left intact. The OS-recents adapter currently targets Omasnap1.24 and uses Python QtCore support; copy/recents failures are reported without losing the local original.
 
@@ -69,29 +69,23 @@ Mirror is on by default, the opposite of the original unmirrored preview. Older 
 
 The plugin opens a native Quickshell floating window. Drag the WebcamTuner heading to move it, or use normal window-manager move/resize controls. Clicking elsewhere does not dismiss it. The native Close button and Escape hide the window and stop the current preview. The standalone Preview.qml uses the same window component.
 
-## Virtual-camera output route
+## Virtual-camera output
 
-The current build is still a local preview. To publish it to webcam consumers, use Linux v4l2loopback plus one persistent user-session producer:
+Start camera output in Setup to publish one persistent user-session PipeWire camera. The Camera selector can switch the physical source without recreating the published node. A new camera must deliver a frame before the previous capture is released; an unavailable source leaves the previous source live and reports the failure. The selector remembers the confirmed saved choice.
 
-1. Install v4l2loopback-dkms against matching kernel headers. On the current host, DKMS and running-kernel headers are present, but v4l2loopback is not installed.
-2. Create a loopback device labelled WebcamTuner with exclusive_caps=1 so Chromium/WebRTC sees capture-only capabilities after a producer attaches. This requires a one-time privileged module setup.
-3. Move capture and composition into one user service, which applies crop, mirror and backgrounds, then writes processed frames to that device (for example via FFmpeg's V4L2 output). The panel must preview that same producer rather than opening the physical camera twice.
-4. Keep the producer alive when the controls window closes; expose explicit output start/stop and readiness/error states. A missing effect must never quietly switch output to the unprocessed room.
-5. Select WebcamTuner once in each consumer, including Teams, Zoom or Meet. Validate Linux V4L2 capture and actual browser/app enumeration; sandbox permissions and supported formats remain part of compatibility testing.
-
-Driver reference: https://github.com/v4l2loopback/v4l2loopback . Kernel installation, persistent publishing, and meeting-app integration are not implemented by this UI update.
+Native Zoom uses the signed, user-local PipeWire V4L2 adapter enabled in Setup. Test independently reads both PipeWire and adapter paths. No kernel module, DKMS or system video device is installed. Other consumers still require separate compatibility verification.
 
 ## Backgrounds
 
-Choose Image, then paste a local absolute image path or use Browse. The framing card immediately shows the selected image, with loading/error feedback. Choose your camera and click Preview camera to see your actual foreground over the image. Blur uses the same local person segmentation. Changing the image or effect updates a running preview. Save profile persists these settings with readback verification. Missing or unreadable images disable Save and Preview until corrected.
+Choose Image, then paste a local absolute image path or use Browse. The framing card immediately shows the selected image, with loading/error feedback. Choose your camera and click Preview camera to see your actual foreground over the image. Blur uses the same local person segmentation. Changing the image or effect updates a running preview. These settings save automatically with readback verification. Missing or unreadable images prevent an invalid preview from starting.
 
-Preview capture and inference run in a separate Python worker. Capture starts on opening when the saved Autostart camera option is enabled, and stops when the window closes. Frames remain in memory; there are no uploads or camera recordings. Capture negotiates the largest supported 16:9 mode up to UHD: verified BRIO 3840x2160/30 and Framework 1920x1080/30. Framing uses that full-resolution source. The panel scales the processed crop to at most 960x540 and caps preview presentation at 15 fps; capture mode and preview size are shown separately. A 2x crop from 4K retains 1920x1080 source pixels. Recurrent video matting analyzes the full view before cropping, and the renderer retains the last frame while decoding its successor. The output notice remains explicit: meeting apps do not receive these effects until virtual-camera output is implemented.
+Preview capture and inference run in a separate Python worker. Capture starts on opening when the saved Autostart camera option is enabled, and stops when the window closes. Frames remain in memory; there are no uploads or camera recordings. Capture negotiates the largest supported 16:9 mode up to UHD: verified BRIO 3840x2160/30 and Framework 1920x1080/30. Framing uses that full-resolution source. The panel scales the processed crop to at most 960x540 and reports its measured fresh-frame rate; capture mode and preview size are shown separately. A 2x crop from 4K retains 1920x1080 source pixels. Recurrent video matting analyzes the full view before cropping, and the renderer retains the last frame while decoding its successor. Start output in Setup to send the same crop, background and label to compatible camera consumers.
 
 The background checks are `bin/preview-python tests/backgrounds_test.py` and `python3 tests/background_ui.py` with WEBCAMTUNER_TEST_ROOT set. `tests/live_preview.py` is an opt-in, bounded real-camera check that also requires WEBCAMTUNER_ACCEPTANCE_IMAGE; it changes image/blur/original effects over the real Quickshell pipe, then stops capture without recording frames.
 
 ## Keyboard and pointer
 
-- Scroll over the preview to zoom; drag it to pan when zoomed.
+- Drag the camera image to position it. Select Adjust: Camera or Background, then use the slider or Ctrl+scroll to zoom.
 - Tab and Shift+Tab move through controls; Enter/Space activate focused buttons.
 - Escape closes the Omarchy panel when focus is in its editor.
 

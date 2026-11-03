@@ -144,7 +144,7 @@ def read_settings():
 
 
 def validate_overlay(value):
-    if not isinstance(value, dict) or not {'enabled', 'opacity'} <= set(value) or set(value) - {'enabled','opacity','x','y','fontFamily','fontSize','bold','italic','allCaps'} or not isinstance(value['enabled'], bool):
+    if not isinstance(value, dict) or not {'enabled', 'opacity'} <= set(value) or set(value) - {'enabled','opacity','x','y','fontFamily','fontSize','bold','italic','allCaps','color'} or not isinstance(value['enabled'], bool):
         raise ValueError('Invalid label overlay.')
     opacity = value['opacity']
     if isinstance(opacity, bool) or not isinstance(opacity, (int, float)) or not math.isfinite(opacity) or not 0 <= opacity <= 1:
@@ -156,6 +156,7 @@ def validate_overlay(value):
     for field in ('bold','italic','allCaps'):
         if field in value and not isinstance(value[field],bool): raise ValueError('Invalid label format.')
     if 'fontFamily' in value and (not isinstance(value['fontFamily'],str) or len(value['fontFamily']) > 128 or any(ord(c)<32 or ord(c)==127 for c in value['fontFamily'])): raise ValueError('Invalid label font.')
+    if 'color' in value and (not isinstance(value['color'],str) or not re.fullmatch(r'#[0-9a-fA-F]{6}',value['color'])):raise ValueError('Invalid label color.')
     return value
 
 

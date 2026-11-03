@@ -32,11 +32,15 @@ test('an old panel cannot overwrite a newer profile', t => {
 test('small background crops and optional overlays round-trip without changing camera limits', t => {
   const path = fixture(t), store = defaults()
   store.profiles[0].background = { mode: 'image', imagePath: '/private/background.png',
-    crop: { zoom: 12, centerX: .7, centerY: .4 }, labelOverlay: {enabled:true,opacity:.75,text:'Sunrise ☀'} }
+    crop: { zoom: 12, centerX: .7, centerY: .4 }, labelOverlay: {enabled:true,opacity:.75,text:'Sunrise ☀',color:'#25a0ff'} }
   const saved = saveStore(store, path)
   assert.deepEqual(readStore(path).profiles[0].background, saved.profiles[0].background)
   for (const opacity of [-.1, 1.1, NaN]) {
     const invalid = structuredClone(saved); invalid.profiles[0].background.labelOverlay.opacity = opacity
+    assert.throws(() => saveStore(invalid,path))
+  }
+  for (const color of ['red', '#12', '#ffffff00', 'url(https://example.com)', 12]) {
+    const invalid = structuredClone(saved); invalid.profiles[0].background.labelOverlay.color = color
     assert.throws(() => saveStore(invalid,path))
   }
   const invalid = structuredClone(saved); invalid.profiles[0].crop.zoom = 12

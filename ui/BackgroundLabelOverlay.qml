@@ -11,7 +11,7 @@ Item {
         width:Math.min(implicitWidth,parent.width)
         text: root.overlay.allCaps ? (root.overlay.text||"").toUpperCase() : root.overlay.text || ""
         textFormat: Text.PlainText
-        color: "white"
+        color: root.overlay.color || "#ffffff"
         style: Text.Outline
         styleColor: "#cc000000"
         font.pixelSize: Math.max(10, Math.round(parent.height * (root.overlay.fontSize||.034)))

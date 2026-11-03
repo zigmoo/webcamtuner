@@ -105,6 +105,8 @@ def validate_settings(settings: dict) -> dict:
             if key in overlay and not isinstance(overlay[key],bool): raise ValueError('Invalid label format')
         family=overlay.get('fontFamily','sans')
         if not isinstance(family,str) or len(family)>128 or any(ord(c)<32 or ord(c)==127 for c in family): raise ValueError('Invalid label font')
+        color=overlay.get('color','#ffffff')
+        if not isinstance(color,str) or not re.fullmatch(r'#[0-9a-fA-F]{6}',color):raise ValueError('Invalid label color')
     return settings
 
 
@@ -119,7 +121,7 @@ def label_font_path(family='sans', bold=False, italic=False):
 
 
 @lru_cache(maxsize=16)
-def label_bitmap(text, width, height, family='sans', bold=False, italic=False, font_size=.034, all_caps=False):
+def label_bitmap(text, width, height, family='sans', bold=False, italic=False, font_size=.034, all_caps=False, color='#ffffff'):
     size = max(10, round(height * font_size))
     margin = max(4, round(height * .02))
     stroke = max(1, round(size / 16))
@@ -139,7 +141,8 @@ def label_bitmap(text, width, height, family='sans', bold=False, italic=False, f
     bounds = ImageDraw.Draw(Image.new('RGBA', (1,1))).multiline_textbbox((0,0), text, font=font, stroke_width=stroke, spacing=max(2,size//8))
     tile = Image.new('RGBA', (min(width,max(1,math.ceil(bounds[2]-bounds[0]+stroke*2))), min(height,max(1,math.ceil(bounds[3]-bounds[1]+stroke*2)))))
     draw = ImageDraw.Draw(tile)
-    draw.multiline_text((stroke - bounds[0], stroke - bounds[1]), text, font=font, fill=(255,255,255,255),
+    rgb=tuple(int(color[i:i+2],16) for i in (1,3,5))
+    draw.multiline_text((stroke - bounds[0], stroke - bounds[1]), text, font=font, fill=(*rgb,255),
         stroke_fill=(0,0,0,204), stroke_width=stroke, spacing=max(2, size//8))
     pixels = np.asarray(tile)
     return cv2.cvtColor(pixels[...,:3], cv2.COLOR_RGB2BGR), pixels[...,3:4].astype(np.float32) / 255
@@ -151,7 +154,7 @@ def apply_label_overlay(frame, overlay):
         return frame
     h,w = frame.shape[:2]
     color, alpha = label_bitmap(overlay['text'], w, h, overlay.get('fontFamily','sans'), overlay.get('bold',False),
-        overlay.get('italic',False), overlay.get('fontSize',.034), overlay.get('allCaps',False))
+        overlay.get('italic',False), overlay.get('fontSize',.034), overlay.get('allCaps',False), overlay.get('color','#ffffff'))
     alpha = alpha * overlay.get('opacity', .75)
     result = frame.copy()
     x = round((w-color.shape[1])*overlay.get('x',.02)); y = round((h-color.shape[0])*overlay.get('y',.96))
@@ -362,6 +365,69 @@ def save_processed_snapshot(frame, matte, settings, background):
     return {'path': str(path), 'width': cw, 'height': ch, **snapshot_files.mirror_snapshot(path)}
 
 
+class CameraCapture:
+    """One latest-frame reader; only its own thread releases the V4L2 handle."""
+    def __init__(self, camera):
+        listing = subprocess.check_output(['v4l2-ctl', '-d', camera, '--list-formats-ext'], text=True, timeout=5)
+        selected = choose_capture_mode(capture_modes(listing))
+        self.capture = cv2.VideoCapture(camera, cv2.CAP_V4L2)
+        self.condition = threading.Condition()
+        self.stopping = threading.Event()
+        self.frame, self.sequence, self.error = None, 0, None
+        self.reader = None
+        try:
+            self.capture.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*selected['fourcc']))
+            self.capture.set(cv2.CAP_PROP_FRAME_WIDTH, selected['width'])
+            self.capture.set(cv2.CAP_PROP_FRAME_HEIGHT, selected['height'])
+            self.capture.set(cv2.CAP_PROP_FPS, min(selected['fps'], 30))
+            self.capture.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+            if not self.capture.isOpened():
+                raise RuntimeError('Cannot open this camera. Check its privacy switch or whether another app is using it.')
+            if (int(self.capture.get(cv2.CAP_PROP_FRAME_WIDTH)), int(self.capture.get(cv2.CAP_PROP_FRAME_HEIGHT))) != (selected['width'], selected['height']):
+                raise RuntimeError('Camera did not accept its selected full-resolution mode')
+            self.fps = self.capture.get(cv2.CAP_PROP_FPS)
+            self.reader = threading.Thread(target=self.grab, daemon=True)
+            self.reader.start()
+            self.next(0, timeout=3)
+        except BaseException:
+            self.close()
+            raise
+
+    def grab(self):
+        try:
+            while not self.stopping.is_set():
+                okay, image = self.capture.read()
+                with self.condition:
+                    if not okay:
+                        self.error = 'Camera stopped delivering frames; check its privacy switch and connection'
+                        self.condition.notify_all()
+                        return
+                    self.frame = image
+                    self.sequence += 1
+                    self.condition.notify_all()
+        finally:
+            self.capture.release()
+
+    def next(self, previous, timeout=1):
+        with self.condition:
+            if not self.condition.wait_for(lambda: self.sequence != previous or self.error or self.stopping.is_set(), timeout):
+                raise RuntimeError('Camera stopped delivering fresh frames')
+            if self.error:
+                raise RuntimeError(self.error)
+            if self.stopping.is_set():
+                raise RuntimeError('Camera capture stopped')
+            return self.frame, self.sequence
+
+    def close(self):
+        self.stopping.set()
+        with self.condition:
+            self.condition.notify_all()
+        if self.reader is not None:
+            self.reader.join(timeout=1)
+        else:
+            self.capture.release()
+
+
 def run(initial: dict, frame_limit: int = 0, ui_overlay: bool = False, publish: bool = False) -> None:
     global OUTPUT_HOOK
     cv2.setNumThreads(2)
@@ -386,8 +452,6 @@ def run(initial: dict, frame_limit: int = 0, ui_overlay: bool = False, publish: 
                 snapshots.append(value)
         else:
             parsed = validate_settings(value)
-            if parsed['camera'] != current['camera']:
-                raise ValueError('Stop camera output before selecting a different camera.')
             with guard:
                 updates[:] = [parsed]
 
@@ -421,37 +485,11 @@ def run(initial: dict, frame_limit: int = 0, ui_overlay: bool = False, publish: 
 
     background = load_background(current["background"]["imagePath"]) if current["background"]["mode"] == "image" else None
     segmenter = Segmenter() if current["background"]["mode"] != "none" else None
-    listing = subprocess.check_output(["v4l2-ctl", "-d", current["camera"], "--list-formats-ext"], text=True, timeout=5)
-    selected = choose_capture_mode(capture_modes(listing))
-    capture = cv2.VideoCapture(current["camera"], cv2.CAP_V4L2)
-    reader = None
+    capture = None
     try:
-        capture.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*selected["fourcc"]))
-        capture.set(cv2.CAP_PROP_FRAME_WIDTH, selected["width"])
-        capture.set(cv2.CAP_PROP_FRAME_HEIGHT, selected["height"])
-        capture.set(cv2.CAP_PROP_FPS, min(selected["fps"], 30))
-        capture.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-        if not capture.isOpened():
-            raise RuntimeError("Cannot open this camera. Close other camera previews and check its privacy switch.")
-        if (int(capture.get(cv2.CAP_PROP_FRAME_WIDTH)), int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT))) != (selected["width"], selected["height"]):
-            raise RuntimeError("Camera did not accept its selected full-resolution mode")
-        source_fps = capture.get(cv2.CAP_PROP_FPS)
+        capture = CameraCapture(current['camera'])
+        source_fps = capture.fps
         target_fps = min(30, source_fps) if source_fps > 0 else 30
-        condition = threading.Condition()
-        latest = {"frame": None, "sequence": 0, "error": None}
-        def grab_frames():
-            while alive.is_set():
-                okay, image = capture.read()
-                with condition:
-                    if not okay:
-                        latest["error"] = "Camera stopped delivering frames; check its privacy switch and connection"
-                        condition.notify_all()
-                        return
-                    latest["frame"] = image
-                    latest["sequence"] += 1
-                    condition.notify_all()
-        reader = threading.Thread(target=grab_frames, daemon=True)
-        reader.start()
         if not publish:
             threading.Thread(target=read_updates, daemon=True).start()
         else:
@@ -459,34 +497,36 @@ def run(initial: dict, frame_limit: int = 0, ui_overlay: bool = False, publish: 
         count, last_sequence, dropped = 0, 0, 0
         delivered = deque(maxlen=60)
         last_label_style = None
+        configuration_error = {}
         while alive.is_set():
             began = time.monotonic()
             with guard:
                 update = updates.pop() if updates else None
             if update is not None:
                 try:
-                    if update["camera"] != current["camera"]:
-                        raise ValueError("Stop preview before switching cameras")
                     candidate = load_background(update["background"]["imagePath"]) if update["background"]["mode"] == "image" else None
                     if update["background"]["mode"] != "none" and segmenter is None:
                         segmenter = Segmenter()
-                    if current["background"]["mode"] == "none" and update["background"]["mode"] != "none":
+                    if update['camera'] != current['camera']:
+                        # Prove the new source delivers frames before releasing the old one.
+                        # Publisher and its PipeWire node survive the source change.
+                        replacement = CameraCapture(update['camera'])
+                        previous, capture = capture, replacement
+                        previous.close()
+                        last_sequence = 0
+                        delivered.clear()
+                        source_fps = capture.fps
+                        target_fps = min(30, source_fps) if source_fps > 0 else 30
+                        if segmenter is not None:
+                            segmenter.reset()
+                    elif current["background"]["mode"] == "none" and update["background"]["mode"] != "none":
                         segmenter.reset()
                     current, background = update, candidate
-                except (ValueError, OSError) as error:
-                    emit({"error": str(error), "retainedPreviousEffect": True})
-            with condition:
-                deadline = time.monotonic() + (5 if last_sequence == 0 else 1)
-                while latest["sequence"] == last_sequence and not latest["error"] and alive.is_set():
-                    condition.wait(0.1)
-                    if time.monotonic() >= deadline:
-                        raise RuntimeError("Camera stopped delivering fresh frames")
-                if latest["error"]:
-                    raise RuntimeError(latest["error"])
-                if not alive.is_set():
-                    break
-                frame = latest["frame"]
-                sequence = latest["sequence"]
+                    configuration_error = {}
+                except (ValueError, OSError, RuntimeError, subprocess.SubprocessError) as error:
+                    configuration_error = {'configurationError': str(error)[:500], 'failedConfigurationRevision': update.get('configurationRevision', 0)}
+                    emit({**configuration_error, 'camera': current['camera'], 'retainedPreviousEffect': True})
+            frame, sequence = capture.next(last_sequence)
             dropped += max(0, sequence - last_sequence - 1)
             last_sequence = sequence
             captured = time.monotonic()
@@ -548,7 +588,7 @@ def run(initial: dict, frame_limit: int = 0, ui_overlay: bool = False, publish: 
             source_record = {}
             overlay=current['background'].get('labelOverlay',{})
             if ui_overlay and mode=='image' and overlay.get('enabled') and overlay.get('text'):
-                key=(overlay['text'],frame.shape[1],frame.shape[0],overlay.get('fontFamily') or 'sans',overlay.get('bold',False),overlay.get('italic',False),overlay.get('fontSize',.034),overlay.get('allCaps',False))
+                key=(overlay['text'],frame.shape[1],frame.shape[0],overlay.get('fontFamily') or 'sans',overlay.get('bold',False),overlay.get('italic',False),overlay.get('fontSize',.034),overlay.get('allCaps',False),overlay.get('color','#ffffff'))
                 if key!=last_label_style:
                     color,alpha=label_bitmap(*key)
                     rgba=cv2.cvtColor(color,cv2.COLOR_BGR2BGRA);rgba[...,3]=(alpha[...,0]*255).astype(np.uint8)
@@ -561,7 +601,7 @@ def run(initial: dict, frame_limit: int = 0, ui_overlay: bool = False, publish: 
                 if current.get('mirror',True): source_image = cv2.flip(source_image,1)
                 source_ok, source_jpeg = cv2.imencode('.jpg', source_image, [cv2.IMWRITE_JPEG_QUALITY,82])
                 if source_ok: source_record['sourceFrame'] = base64.b64encode(source_jpeg).decode('ascii')
-            emit({**source_record, "frame": base64.b64encode(encoded).decode("ascii"), "effect": mode, "width": frame.shape[1], "height": frame.shape[0],
+            emit({**source_record, **configuration_error, 'camera': current['camera'], "frame": base64.b64encode(encoded).decode("ascii"), "effect": mode, "width": frame.shape[1], "height": frame.shape[0],
                   "captureWidth": source_width, "captureHeight": source_height, "captureFps": source_fps, "previewFps": actual_fps,
                   "configurationRevision": current.get("configurationRevision", 0),
                   "sequence": sequence, "dropped": dropped, "processingMs": (now - began) * 1000,
@@ -580,10 +620,8 @@ def run(initial: dict, frame_limit: int = 0, ui_overlay: bool = False, publish: 
         if server is not None:
             server.close()
             OUTPUT_HOOK = None
-        if reader is not None:
-            reader.join(timeout=2)
-        if reader is None or not reader.is_alive():
-            capture.release()
+        if capture is not None:
+            capture.close()
         if snapshot_thread is not None:
             snapshot_thread.join(timeout=5)
 

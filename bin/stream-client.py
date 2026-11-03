@@ -6,15 +6,32 @@ import socket
 import sys
 sys.dont_write_bytecode = True
 import threading
+import time
 from camera_stream import MAX_COMMAND, command, connect
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--configure')
+    parser.add_argument('--wait-applied', action='store_true')
     args = parser.parse_args()
     if args.configure:
-        print(json.dumps(command(json.loads(args.configure))))
+        requested = json.loads(args.configure)
+        result = command(requested)
+        if args.wait_applied:
+            deadline = time.monotonic() + 12
+            while time.monotonic() < deadline:
+                result = command({'operation': 'status'})
+                if result.get('failedConfigurationRevision', -1) >= requested.get('configurationRevision', 0):
+                    print(json.dumps(dict(result, error=result.get('configurationError', 'Camera settings were not applied.'))))
+                    raise SystemExit(1)
+                if result.get('camera') == requested['camera'] and result.get('configurationRevision', -1) >= requested.get('configurationRevision', 0):
+                    break
+                time.sleep(.1)
+            else:
+                print(json.dumps(dict(result, error='The camera did not confirm the new settings.')))
+                raise SystemExit(1)
+        print(json.dumps(result))
         return
     with connect() as connection:
         connection.sendall(b'{"operation":"subscribe"}\n')

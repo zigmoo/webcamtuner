@@ -14,7 +14,7 @@ Item {
     property real frameHeight: 540
     readonly property bool useBitmap: {
         if(editing || bitmapSource.toString()==="" || bitmapKey==="")return false
-        try{return JSON.stringify(JSON.parse(bitmapKey))===JSON.stringify([overlay.text||"",frameWidth,frameHeight,overlay.fontFamily||"sans",!!overlay.bold,!!overlay.italic,overlay.fontSize||.034,!!overlay.allCaps])}catch(e){return false}
+        try{return JSON.stringify(JSON.parse(bitmapKey))===JSON.stringify([overlay.text||"",frameWidth,frameHeight,overlay.fontFamily||"sans",!!overlay.bold,!!overlay.italic,overlay.fontSize||.034,!!overlay.allCaps,overlay.color||"#ffffff"])}catch(e){return false}
     }
     readonly property bool hasText: !!overlay.text || editing
     signal changed(var patch)
@@ -50,7 +50,7 @@ Item {
             visible: !root.editing && !root.useBitmap
             text: root.overlay.allCaps ? (root.overlay.text||"").toUpperCase() : root.overlay.text||""
             textFormat: Text.PlainText
-            color:"white";style:Text.Outline;styleColor:"#cc000000"
+            color:root.overlay.color||"#ffffff";style:Text.Outline;styleColor:"#cc000000"
             font.family:root.overlay.fontFamily||"Sans"
             font.pixelSize:Math.max(10,Math.round(root.height*(root.overlay.fontSize||.034)))
             font.bold:!!root.overlay.bold; font.italic:!!root.overlay.italic
@@ -81,7 +81,7 @@ Item {
             visible:root.editing
             maximumLength:80
             font:display.font
-            color:"white"
+            color:root.overlay.color||"#ffffff"
             selectByMouse:true
             padding:2
             background:Rectangle{color:"#c0202933";border.color:"#93c5aa";radius:3}

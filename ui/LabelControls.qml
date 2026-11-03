@@ -45,6 +45,11 @@ RowLayout {
                     CheckBox { objectName:"labelItalic";text:qsTr("Italic");checked:!!root.overlay.italic;nextCheckState:function(){return checkState};onClicked:root.changed({italic:!checked}) }
                     CheckBox { objectName:"labelAllCaps";text:qsTr("ALL CAPS");checked:!!root.overlay.allCaps;nextCheckState:function(){return checkState};onClicked:root.changed({allCaps:!checked}) }
                 }
+                RowLayout {
+                    Label {text:qsTr("Text color")}
+                    Rectangle {width:24;height:24;radius:3;color:root.overlay.color||"#ffffff";border.color:"#73808f"}
+                    Button {objectName:"labelColorPicker";text:qsTr("Choose…");onClicked:{colorPicker.selectedColor=root.overlay.color||"#ffffff";colorPicker.open()}}
+                }
                 Label { text:qsTr("Text size · %1%").arg(Math.round((root.overlay.fontSize||.034)*100)) }
                 Slider { objectName:"labelFontSize";Layout.fillWidth:true;from:.012;to:.15;value:root.overlay.fontSize||.034;onMoved:root.changed({fontSize:value}) }
                 Label { text:qsTr("Opacity · %1%").arg(Math.round((root.overlay.opacity===undefined?.75:root.overlay.opacity)*100)) }
@@ -55,4 +60,13 @@ RowLayout {
     }
     Item { Layout.fillWidth:true }
     Label { text:root.feedback;textFormat:Text.PlainText;elide:Text.ElideRight;Layout.maximumWidth:150 }
+    ColorDialog {
+        id:colorPicker
+        objectName:"labelColorDialog"
+        title:qsTr("Label text color")
+        onAccepted:{
+            function channel(value){return Math.max(0,Math.min(255,Math.round(value*255))).toString(16).padStart(2,"0")}
+            root.changed({color:"#"+channel(selectedColor.r)+channel(selectedColor.g)+channel(selectedColor.b)})
+        }
+    }
 }

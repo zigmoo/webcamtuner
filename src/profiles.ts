@@ -21,6 +21,7 @@ export const profileSchema = z.object({
     labelOverlay: z.object({ enabled: z.boolean(), opacity: unit, text: z.string().max(256).regex(/^[^\u0000-\u001f\u007f]*$/),
       x: unit.optional(), y: unit.optional(), fontFamily: z.string().max(128).regex(/^[^\u0000-\u001f\u007f]*$/).optional(),
       fontSize: z.number().finite().min(.012).max(.15).optional(), bold: z.boolean().optional(), italic: z.boolean().optional(), allCaps: z.boolean().optional(),
+      color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
     }).strict().optional(),
   }).strict(),
   foreground: z.object({ x: z.number().finite().min(-1).max(1), y: z.number().finite().min(-1).max(1) }).strict().optional(),

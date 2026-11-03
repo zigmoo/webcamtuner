@@ -9,7 +9,7 @@ import uuid
 os.environ["QT_QPA_PLATFORM"] = "offscreen"
 os.environ["QT_QUICK_BACKEND"] = "software"
 os.environ["QT_SCALE_FACTOR"] = "1"
-from PySide6.QtCore import QTimer, QUrl
+from PySide6.QtCore import QObject, QTimer, QUrl
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtQml import QQmlExpression, qmlContext
 from PySide6.QtQuick import QQuickView
@@ -61,10 +61,15 @@ def exercise():
         evaluate('frame(2, 0.5, 0.5)')
         inventory([A, B], aliases)
         flush()
+        evaluate('outputControl=Qt.createQmlObject(\'import QtQuick; QtObject {property bool published:true;property bool checked:true;property bool busy:false;property bool cameraSwitching:false;property string cameraFeedback:"";property int configurationRevision:1}\',root)')
+        assert editor.findChild(QObject, 'cameraChoice').property('enabled'), 'Published output must allow source selection'
+        evaluate('previewOn=true')
         evaluate('selectCamera("' + B['id'] + '")')
         assert editor.property('savedCamera') == A['id']
         flush()
         assert editor.property('savedCamera') == B['id']
+        assert editor.property('previewOn'), 'Switching the shared stream must retain its preview'
+        evaluate('outputControl.published=false')
         assert editor.property('zoom') == 2 and editor.property('dirty') is True
         execute('read', [])
         renumbered = {'id': '/dev/video108', 'description': 'Camera B'}

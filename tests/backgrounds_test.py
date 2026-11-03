@@ -15,6 +15,17 @@ spec.loader.exec_module(preview)
 
 
 class BackgroundTests(unittest.TestCase):
+    def test_label_color_changes_rendered_pixels_without_changing_opacity(self):
+        frame = np.zeros((360, 640, 3), dtype=np.uint8)
+        settings = {'enabled': True, 'opacity': .75, 'text': 'Color', 'color': '#ff4000'}
+        colored = preview.apply_label_overlay(frame, settings)
+        self.assertGreater(int(colored[..., 2].max()), 150)
+        self.assertEqual(int(colored[..., 0].max()), 0)
+        self.assertLessEqual(int(colored[..., 1].max()), 50)
+        white = preview.apply_label_overlay(frame, {k:v for k,v in settings.items() if k != 'color'})
+        np.testing.assert_array_equal(white[..., 0], white[..., 2])
+        self.assertTrue(np.all(frame == 0))
+
     def test_label_position_and_caps_are_applied_to_output_pixels(self):
         frame=np.zeros((360,640,3),dtype=np.uint8)
         spec={'enabled':True,'opacity':1,'text':'Label','fontFamily':'DejaVu Sans','bold':True,'italic':True,'allCaps':True,'fontSize':.06,'x':0,'y':0}

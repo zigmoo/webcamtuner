@@ -51,6 +51,8 @@ def continue_typing():
  type_text(' without interruption');QTest.keyClick(view,Qt.Key_Return)
  click(find(editor,'labelFormatButton'));QTest.qWait(100)
  for name in ('labelBold','labelItalic','labelAllCaps'):click(find(view.contentItem(),name))
+ color=editor.findChild(QObject,'labelColorDialog');assert color
+ ev('selectedColor="#25a0ff";accepted()',color)
  ev('editLabel({fontFamily:"DejaVu Sans",fontSize:.05})')
  QTest.keyClick(view,Qt.Key_Escape);QTest.qWait(150)
  label=find(editor,'previewLabelDrag');p=label.mapToScene(QPointF(label.width()/2,label.height()/2)).toPoint()
@@ -62,6 +64,7 @@ def verify():
  global finished
  store=json.loads((scratch/'config/profiles.json').read_text());spec=store['profiles'][0]['background']['labelOverlay']
  assert spec['text']=='Still typing without interruption' and spec['bold'] and spec['italic'] and spec['allCaps'] and spec['fontSize']==.05
+ assert spec['color']=='#25a0ff'
  assert spec['x']>.1 and spec['y']<.9
  controller('read',[]);assert ev('backgroundLabelOverlay.text')==spec['text']
  assert not editor.property('dirty'),'Readback must not start another save merely because JSON keys were reordered'
