@@ -13,6 +13,8 @@ sys.dont_write_bytecode = True
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import camera_stream
+from media_runtime import environment
+os.environ.update(environment())
 
 UNIT = 'webcamtuner-test.service'
 NODE = 'webcamtuner.test'

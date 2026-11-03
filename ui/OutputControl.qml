@@ -7,6 +7,7 @@ Item {
     property int configurationRevision: 0
     property bool panelOpen: false
     property bool enabled: true
+    property bool readyToStart: true
     property bool checked: false
     property var state: ({published:false, processed:false})
     readonly property bool published: !!state.published && !!state.processed
@@ -43,7 +44,7 @@ Item {
         operation.running=true
     }
     function start() {
-        if(!enabled || busy || !configuration || !configuration.camera)return
+        if(!enabled || !readyToStart || busy || !configuration || !configuration.camera)return
         starting();feedback=qsTr("Starting your composed camera output…");startDelay.restart()
     }
     function stop() {

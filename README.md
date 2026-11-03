@@ -1,8 +1,8 @@
 # WebcamTuner
 
-Public source: [zigmoo/webcamtuner](https://github.com/zigmoo/webcamtuner). Application source is licensed under Apache-2.0; the bundled Robust Video Matting model retains its separate GPL-3.0 license and provenance in models/rvm/. See [Install](#install) for the marketplace checkout, then build the controller in that checkout. The [Build and review](#build-and-review) steps are for working in this source tree.
+Public source: [zigmoo/webcamtuner](https://github.com/zigmoo/webcamtuner). Application source is licensed under Apache-2.0; the bundled Robust Video Matting model retains its separate GPL-3.0 license and provenance in models/rvm/. See [Install](#install) for first use through the plugin’s Setup tab. The [Build and review](#build-and-review) steps are for working in this source tree.
 
-An Omarchy plugin for persistent webcam framing and appearance profiles. Processed camera preview and composition editor for DIL-3027 (v0.9.2).
+An Omarchy plugin for persistent webcam framing and appearance profiles. Processed camera preview and composition editor for DIL-3027 (v0.9.3).
 
 Camera is the composition workspace: choose the remembered webcam, preview the composite, select Adjust: Camera or Background for the shared framing controls, and take a full-resolution processed snapshot. Drag the person to position them; enable Show label beneath the preview to drag or double-click its text and change font, bold, italic, ALL CAPS, size, color and opacity. Profiles and per-image appearance save automatically. Background contains image selection/import, captions and library management. Setup contains runtime, snapshot-mirror, Start/Stop output and native Zoom-adapter controls. Test shows independent PipeWire and V4L2 readbacks with measured receive FPS. About includes the version, author and source.
 
@@ -14,20 +14,19 @@ Start camera output in Setup publishes the actual composite as WebcamTuner throu
 
 ## Install
 
-`omarchy plugin add` clones this repository as the plugin. The bar widget is in the repository root. The controller is TypeScript and is not committed as a build, so build it inside the installed checkout before enabling the plugin. `setup:preview` prepares a user-local ONNX Runtime. It does not download the model. The bundled model stays in `models/rvm`.
+Add this repository in Omarchy’s plugin manager and enable WebcamTuner. The first open checks readiness and opens Setup when preparation is needed.
 
-Requires Node.js 22+, npm, Bun, Qt Multimedia, Quickshell, and Python 3 with OpenCV, NumPy, and Pillow. `webcam_tool` is optional and is used only for remote inventory.
+1. Click **Prepare WebcamTuner**. Progress and individual readiness checks stay visible. This builds the controller in your cache when needed and prepares OpenCV, NumPy, Pillow and ONNX Runtime in a private environment under your home directory. The bundled matting model is verified without opening a camera.
+2. Optionally click **Enable GPU acceleration** for a supported NVIDIA GPU. This prepares a separate GPU environment; CPU remains available.
+3. Choose your camera and background in Camera/Background, then click **Start camera output** in Setup.
+4. For native Zoom, click **Enable Zoom camera adapter** once, quit and reopen Zoom, then choose **WebcamTuner** in its camera settings.
+5. Use **Test** to inspect independent published-video readbacks. Verify reception in each meeting app separately.
 
-```bash
-omarchy plugin add https://github.com/zigmoo/webcamtuner.git
-cd ~/.config/omarchy/plugins/moo.webcamtuner
-npm ci --ignore-scripts --no-audit --no-fund
-npm run build
-npm run setup:preview
-omarchy plugin enable moo.webcamtuner
-```
+No build, pip, terminal or administrator commands are required after adding the plugin. Setup can check readiness again and repair the local runtime. Stop output before preparing or repairing libraries; existing profiles, backgrounds and snapshots are preserved. Preparation itself does not start capture.
 
-Profiles are stored under `$XDG_CONFIG_HOME/webcamtuner/profiles.json`. Installation does not replace them.
+Supported desktop baseline: Omarchy/Arch with Python3, Python GObject/GStreamer desktop libraries, mise and an active user PipeWire session. Missing video plugins can be extracted from signed Arch packages matching the installed desktop into WebcamTuner’s private data directory. Packages are never installed system-wide, and package scripts are never run. A missing base desktop library or unavailable matching repository version is reported as unsupported; Setup does not silently request sudo. These paths are tested with empty WebcamTuner data/cache folders and hidden system plugins on the development host; a clean Omarchy VM release check remains pending.
+
+Profiles live under `$XDG_CONFIG_HOME/webcamtuner/profiles.json`. Backgrounds, snapshots, versioned processing runtimes and optional adapters live under `$XDG_DATA_HOME/webcamtuner`; generated controller builds live under `$XDG_CACHE_HOME/webcamtuner`. No npm dependencies or compiled artifacts are written into the installed plugin checkout during preparation.
 
 ## Remove
 
@@ -39,7 +38,7 @@ Removal deletes the plugin checkout. It leaves profiles and the user-local ONNX 
 
 ## Build and review
 
-Requires Node.js 22+, npm, Bun for bundling, Qt Multimedia, Quickshell, Python 3 with OpenCV/NumPy/Pillow, and Omarchy for the bar plugin. The GPL-3.0 Robust Video Matting MobileNetV3 model is bundled with its upstream license, release URL, and SHA256. Application source remains Apache-2.0; the model has its own GPL-3.0 license. Run npm run setup:preview once to prepare a user-local ONNX Runtime environment. There are no runtime model downloads. webcam_tool is optional and needed only for remote inventory.
+Developer builds require Node.js22+, npm, Bun for bundling, Qt Multimedia, Quickshell and Omarchy. The Setup tab prepares Python processing dependencies for normal users. The GPL-3.0 Robust Video Matting MobileNetV3 model is bundled with its upstream license, release URL, and SHA256. Application source remains Apache-2.0; the model has its own GPL-3.0 license. Use Setup → Prepare WebcamTuner for the user-local runtime; developers can invoke bin/setup-preview as the same entry point. There are no runtime model downloads. webcam_tool is optional and needed only for remote inventory.
 
 ```bash
 npm ci --ignore-scripts --no-audit --no-fund
@@ -61,7 +60,7 @@ bin/webcamtuner remote --host framemoowork --json
 
 Remote inspection calls webcam_tool's public CLI and never starts capture. See DESIGN.md for ownership boundaries, source identity, the proposed processing service, and remaining work.
 
-For focused checks, set WEBCAMTUNER_TEST_ROOT to a disposable project-specific directory, run npm test, then python3 tests/ui_smoke.py. The UI smoke check runs offscreen, keeps the camera off, persists a crop through the controller, reloads it, and writes a design screenshot beneath that test directory.
+For focused checks, set WEBCAMTUNER_TEST_ROOT to a disposable project-specific directory, run npm test, then python3 tests/ui_smoke.py. Isolated UI fixtures can set WEBCAMTUNER_RUNTIME_PYTHON to an absolute prepared Python interpreter. Opt-in first-use checks are tests/first_run_fresh.py and tests/media_runtime_fresh.py with WEBCAMTUNER_ACCEPT_SETUP_DOWNLOADS=1; they use only fixture-owned data/cache folders and never capture a camera. The UI smoke check runs offscreen, keeps the camera off, persists a crop through the controller, reloads it, and writes a design screenshot beneath that test directory.
 
 ## Mirror and window controls
 
@@ -107,18 +106,16 @@ Each window open requests one preview start after the remembered camera is confi
 
 A fixed 42-pixel title bar keeps the grip, WebcamTuner title, minimize/expand control, and close × visible above scrolling content. Drag the grip or title area to move the window. As in Revelator floating ActionPanel palettes, minimize collapses the body to its title bar; expand restores the previous size. A double-click on the drag area also toggles collapse. Preview keeps running while collapsed, and unsaved edits stay in memory. Close × hides the window and stops preview while keeping the draft for reopening through the bar icon. Opening from the bar expands a collapsed window.
 
-## Use in other apps guidance (v0.6.1)
+## Use in other apps
 
-The editor includes a Use in other apps section below its profile controls. It identifies the current output as preview only and explains that no processed virtual webcam is published by this build. The guide describes selecting WebcamTuner in camera settings after virtual output is implemented and started, granting browser camera permission, disabling duplicate app background effects, and refreshing camera discovery. Choosing a physical BRIO or laptop camera bypasses WebcamTuner processing. These are instructions for the planned output flow, not a claim that the current preview is available to meeting apps.
+The collapsible guide explains starting output, enabling the user-only native Zoom adapter, selecting WebcamTuner and avoiding duplicate background effects. Selecting a physical BRIO or laptop camera directly bypasses WebcamTuner. Test provides independent readbacks; each actual app still needs verification.
 
 ## Toolbar and guide refinements (v0.6.2)
 
 The fixed title bar optically centers the title lettering and uses geometric grip, minimize and close icons so font baselines cannot shift their visible centers. On Omarchy, collapse/expand applies an explicit, guarded Hyprland resize to this window after its size hints settle; preferred FloatingWindow dimensions alone do not resize a visible native window. The minimize regression clicks the real toolbar button, holds the title-strip state for nearly two seconds without a hide/remap, expands, and closes. Native Wayland verifies the restored height.
 
-Use in other apps is now a disclosure section, folded by default. Its heading and current preview-only output status remain visible; click the heading to reveal or hide the setup guide. This display preference does not alter the saved camera profile.
+Use in other apps is a disclosure section, folded by default. Its heading and current publication status remain visible; click the heading to reveal or hide the setup guide. This display preference does not alter the saved camera profile.
 
-## Concurrent camera use acceptance requirement
+## Concurrent camera use
 
-Jason confirmed that the same physical camera has worked in Teams and Zoom simultaneously. WebcamTuner must support both apps consuming its processed output concurrently. The existing worker explicitly captures through OpenCV CAP_V4L2 and sends processed preview JPEGs only to the editor; it does not yet publish a camera device or shared output node. Local PipeWire inventory contains video-source nodes for the BRIO and Framework webcam, but that inventory does not establish which capture/sharing path the earlier Teams/Zoom session used. No camera-protocol violation has been demonstrated.
-
-Evaluate shared PipeWire/portal camera capture while implementing the persistent producer, and publish a processed camera through the appropriate app-compatible interface. One producer must own effects and serve the editor and all consumers, rather than opening a fresh physical capture for each client. Acceptance must verify Teams and Zoom receiving the processed camera simultaneously; framing/background changes appearing in both; either app opening or closing without interrupting the other; and editor minimize/close leaving an explicitly running output alive. Also test browser permissions and capture format negotiation. The current preview-only build does not meet this output requirement.
+The persistent user-session producer allows independent consumers without capturing the physical camera twice. Native Zoom rendering and two independent synthetic transport readers have passed. Actual Teams/Zoom concurrency and the Meet/Chat acceptance matrix remain open. Do not infer app compatibility from a source merely appearing in a menu.

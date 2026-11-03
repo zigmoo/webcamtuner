@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { readStore, saveStore, storePath, cropPixels } from './profiles.js'
 import { cameraAliases } from './cameras.js'
 
-const cli = Cli.create('webcamtuner', { version: '0.9.2', description: 'WebcamTuner preview: persist camera framing and background profiles. Preview autostart is a saved profile choice.' })
+const cli = Cli.create('webcamtuner', { version: '0.9.3', description: 'WebcamTuner preview: persist camera framing and background profiles. Preview autostart is a saved profile choice.' })
 cli.command('read', { description: 'Read profiles and their revision without starting capture', run: () => readStore() })
 cli.command('devices', { description: 'Read stable local webcam identifiers without opening a camera', run: () => ({ aliases: cameraAliases() }) })
 cli.command('save', {
@@ -25,7 +25,7 @@ function backgroundLibrary(action: string, paths?: string, crop?: string, select
   if (paths) args.push(crop ? '--path' : '--paths', paths)
   if (crop) args.push('--crop', crop)
   if (selectedPath) args.push('--selected-path', selectedPath)
-  return JSON.parse(execFileSync('python3', args, { encoding: 'utf8', timeout: 60000, maxBuffer: 1048576 }))
+  return JSON.parse(execFileSync(fileURLToPath(new URL('../bin/preview-python', import.meta.url)), args, { encoding: 'utf8', timeout: 60000, maxBuffer: 1048576 }))
 }
 cli.command('backgrounds', {
   description: 'List managed backgrounds and their storage directory',
@@ -43,7 +43,7 @@ cli.command('background-crop', {
   run: c => backgroundLibrary('crop', c.options.path, c.options.crop),
 })
 function backgroundAction(action: string, path: string, id: string, extra: string[] = []) {
-  return JSON.parse(execFileSync('python3', [fileURLToPath(new URL('../bin/background-library.py', import.meta.url)), action, '--path', path, '--id', id, ...extra], { encoding: 'utf8', timeout: 30000, maxBuffer: 1048576 }))
+  return JSON.parse(execFileSync(fileURLToPath(new URL('../bin/preview-python', import.meta.url)), [fileURLToPath(new URL('../bin/background-library.py', import.meta.url)), action, '--path', path, '--id', id, ...extra], { encoding: 'utf8', timeout: 30000, maxBuffer: 1048576 }))
 }
 cli.command('lock-background', {
   description: 'Persist and verify a background lock',
@@ -95,7 +95,6 @@ cli.command('remote', {
 })
 cli.command('doctor', {
   description: 'Report prototype capabilities and profile path',
-  run: () => ({ profiles: storePath(), cropPreview: true, profilePersistence: true, virtualCamera: 'user-session PipeWire; optional user-only V4L2 adapter for native Zoom', backgroundProcessing: 'shared compositor with independent consumer readbacks in Test', appAcceptance: 'requires verification in each actual app', matting: 'RVM MobileNetV3 with recurrent states', capture: 'largest supported 16:9 mode up to UHD 4K', output: '1280x720; nominal 30 fps; actual fresh FPS measured separately', previewDependencies: ['Python runtime from npm run setup:preview', 'OpenCV', 'NumPy', 'Pillow', 'ONNX Runtime 1.31.0'], remoteDiscovery: 'optional webcam_tool adapter', remoteCapture: false }),
+  run: () => ({ profiles: storePath(), cropPreview: true, profilePersistence: true, virtualCamera: 'user-session PipeWire; optional user-only V4L2 adapter for native Zoom', backgroundProcessing: 'shared compositor with independent consumer readbacks in Test', appAcceptance: 'requires verification in each actual app', matting: 'RVM MobileNetV3 with recurrent states', capture: 'largest supported 16:9 mode up to UHD 4K', output: '1280x720; nominal 30 fps; actual fresh FPS measured separately', previewDependencies: ['User-local Python runtime prepared from Setup', 'OpenCV', 'NumPy', 'Pillow', 'ONNX Runtime 1.31.0'], remoteDiscovery: 'optional webcam_tool adapter', remoteCapture: false }),
 })
-export default cli
 cli.serve()

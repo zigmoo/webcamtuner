@@ -19,7 +19,7 @@ shutil.copytree(root / "assets", target / "assets", dirs_exist_ok=True)
 (target / "dist").mkdir(exist_ok=True)
 shutil.copy2(root / "bin" / "webcamtuner", target / "bin" / "webcamtuner")
 shutil.copy2(root / "bin" / "process_preview.py", target / "bin" / "process_preview.py")
-for helper in ("output-control.py", "synthetic-camera.py", "browser-control.py", "background-library.py", "setup-gpu", "runtime-control.py", "snapshot_files.py", "camera_stream.py", "camera_adapter.py", "stream-client.py", "zoom-camera.py", "readback-camera.py"):
+for helper in ("output-control.py", "synthetic-camera.py", "browser-control.py", "background-library.py", "setup-gpu", "runtime-control.py", "snapshot_files.py", "camera_stream.py", "camera_adapter.py", "stream-client.py", "zoom-camera.py", "readback-camera.py", "controller_runtime.py", "controller-launch.py", "first-run.py", "media_runtime.py", "capture_modes.py"):
     shutil.copy2(root / "bin" / helper, target / "bin" / helper)
 shutil.copy2(root / "bin" / "preview-python", target / "bin" / "preview-python")
 shutil.copy2(root / "bin" / "setup-preview", target / "bin" / "setup-preview")
@@ -27,6 +27,9 @@ if (target / "models").exists():
     shutil.rmtree(target / "models")
 shutil.copytree(root / "models", target / "models")
 shutil.copy2(root / "dist" / "cli.js", target / "dist" / "cli.js")
+for filename in ('package.json', 'bun.lock'):
+    shutil.copy2(root / filename, target / filename)
+shutil.copytree(root / 'src', target / 'src', dirs_exist_ok=True)
 for filename in ("README.md", "DESIGN.md", "LICENSE"):
     if (root / filename).exists():
         shutil.copy2(root / filename, target / filename)

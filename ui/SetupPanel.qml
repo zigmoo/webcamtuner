@@ -20,6 +20,10 @@ Item {
     property var cameraSources: ({devices: [], pipewire: [], errors: [], output: {}})
     property string sourceMessage: ""
     property var outputControl: null
+    property var bootstrapControl: null
+    readonly property bool setupBusy: bootstrapControl!==null&&bootstrapControl.busy
+    readonly property bool canPrepare:!setupBusy&&!(outputControl&&(outputControl.published||outputControl.busy||(outputControl.state&&outputControl.state.serviceActive)))
+    Connections {target:root.bootstrapControl;ignoreUnknownSignals:true;function onRefreshed(){root.refreshRuntime()}}
     property string pluginRoot: Qt.resolvedUrl("../").toString().replace(/^file:\/\//, "").replace(/\/$/, "")
     function request(action) {
         if (controller.running) return
@@ -104,22 +108,39 @@ Item {
         height: implicitHeight
         spacing: 16
         component Plain: Text { color: "#e9ecef"; textFormat: Text.PlainText; wrapMode: Text.WordWrap; Layout.fillWidth: true; font.pixelSize: 14 }
+        Plain { text:qsTr("Set up WebcamTuner");font.pixelSize:22;font.bold:true }
+        Plain { text:qsTr("Prepare the controller and local processing libraries here. Setup downloads into your home directory; it does not ask for sudo, install a kernel driver or change Omarchy defaults. It does not start your camera.") }
+        Repeater {
+            model:root.bootstrapControl?root.bootstrapControl.state.checks:[]
+            delegate:Plain {
+                required property var modelData
+                text:(modelData.ready?"✓  ":"○  ")+modelData.label+(modelData.detail?"\n"+modelData.detail:"")
+                color:modelData.ready?"#93c5aa":"#edb17a"
+            }
+        }
+        Flow {
+            Layout.fillWidth:true;spacing:8
+            Button {objectName:"prepareWebcamTuner";text:root.setupBusy?qsTr("Working…"):qsTr("Prepare WebcamTuner");enabled:root.bootstrapControl!==null&&root.canPrepare;onClicked:root.bootstrapControl.run("prepare")}
+            Button {objectName:"checkWebcamTuner";text:qsTr("Check readiness");enabled:root.bootstrapControl!==null&&!root.setupBusy;onClicked:root.bootstrapControl.check()}
+            Button {objectName:"repairWebcamTuner";text:qsTr("Repair local runtime");enabled:root.bootstrapControl!==null&&root.canPrepare;onClicked:root.bootstrapControl.run("repair")}
+        }
+        Plain {text:root.bootstrapControl?root.bootstrapControl.error||root.bootstrapControl.message:"";color:root.bootstrapControl&&root.bootstrapControl.error?"#edb17a":"#93c5aa"}
+        Plain {text:qsTr("Stop output before preparing or repairing libraries. Your profiles, backgrounds and snapshots are kept.");visible:!root.canPrepare&&!root.setupBusy;color:"#a9b4c1"}
+        Plain {text:root.bootstrapControl&&root.bootstrapControl.state.directory?qsTr("Local files: %1").arg(root.bootstrapControl.state.directory):"";visible:text!=="";color:"#a9b4c1"}
         Plain { text: qsTr("Preview performance"); font.pixelSize: 22; font.bold: true }
         Plain { text: root.runtimeState.gpu ? qsTr("Available GPU: ") + root.runtimeState.gpu : qsTr("No supported NVIDIA GPU detected. CPU processing is available.") }
         Plain { text: root.runtimeMessage }
         RowLayout {
             Button {
                 text: runtimeProcess.running ? qsTr("Working…") : qsTr("Enable GPU acceleration")
-                enabled: !runtimeProcess.running && !!root.runtimeState.gpu
+                enabled: root.canPrepare && !runtimeProcess.running && !!root.runtimeState.gpu && root.bootstrapControl!==null
                 onClicked: {
-                    root.runtimeMessage = qsTr("Preparing your local GPU runtime…")
-                    runtimeProcess.command = ["bash", root.pluginRoot + "/bin/setup-gpu"]
-                    runtimeProcess.running = true
+                    root.bootstrapControl.run("gpu")
                 }
             }
             Button {
                 text: qsTr("Use CPU")
-                enabled: !runtimeProcess.running && root.runtimeState.gpuEnabled
+                enabled: root.canPrepare && !runtimeProcess.running && root.runtimeState.gpuEnabled
                 onClicked: {
                     runtimeProcess.command = ["python3", root.pluginRoot + "/bin/runtime-control.py", "cpu"]
                     runtimeProcess.running = true
@@ -181,7 +202,7 @@ Item {
         Plain { text: qsTr("Camera output setup"); font.pixelSize: 22; font.bold: true }
         Plain { text: qsTr("Publish your camera crop, background and label as WebcamTuner. Output uses one capture/compositor for the editor and other apps, and keeps running when this window closes. Stop output releases the camera.") }
         RowLayout {
-            Button { objectName:"startProcessedOutput";text:root.outputControl&&root.outputControl.busy?qsTr("Working…"):qsTr("Start camera output");enabled:root.outputControl!==null&&!root.outputControl.busy&&!root.outputControl.published&&!!root.outputControl.configuration&&!!root.outputControl.configuration.camera;onClicked:root.outputControl.start() }
+            Button { objectName:"startProcessedOutput";text:root.outputControl&&root.outputControl.busy?qsTr("Working…"):qsTr("Start camera output");enabled:root.outputControl!==null&&!root.setupBusy&&(!root.bootstrapControl||root.bootstrapControl.ready)&&!root.outputControl.busy&&!root.outputControl.published&&!!root.outputControl.configuration&&!!root.outputControl.configuration.camera;onClicked:root.outputControl.start() }
             Button { objectName:"stopProcessedOutput";text:qsTr("Stop output");enabled:root.outputControl!==null;onClicked:root.outputControl.stop() }
         }
         Plain { text:root.outputControl?root.outputControl.feedback:"";color:"#93c5aa";visible:text!=="" }
@@ -224,10 +245,12 @@ Item {
     }
     Dialog {
         id:restartZoomDialog
+        parent:Overlay.overlay
         title:qsTr("Restart Zoom?")
         modal:true
         anchors.centerIn:parent
-        width:Math.min(root.width-30,440)
+        width:Math.max(280,Math.min(parent?parent.width-32:440,440))
+        height:220
         standardButtons:Dialog.Ok|Dialog.Cancel
         contentItem:Text {text:qsTr("This closes Zoom windows and leaves any active meeting. Restart only when you are ready to reconnect.");textFormat:Text.PlainText;wrapMode:Text.WordWrap;color:"#e9ecef"}
         onAccepted:root.openApp("zoom",true)

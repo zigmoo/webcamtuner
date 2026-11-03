@@ -7,6 +7,8 @@ FloatingWindow {
     id: window
     property alias editor: editor
     property alias titleBar: titlebar
+    property alias bootstrap: bootstrap
+    property alias bridge: bridge
     property color accent: "#93c5aa"
     property bool collapsed: false
     property int expandedWidth: Math.min(780, screen ? screen.width - 80 : 780)
@@ -36,7 +38,9 @@ FloatingWindow {
     function openEditor() {
         collapsed = false
         visible = true
-        if (!editor.document) bridge.request("read", [])
+        if(editor.testing || (bootstrap.checked&&bootstrap.state.controllerReady)){
+            if (!editor.document) bridge.request("read", [])
+        }else if(bootstrap.checked){tabs.currentIndex=2}
     }
     function openSetup() {
         openEditor()
@@ -78,8 +82,20 @@ FloatingWindow {
     OutputControl {
         id:outputController
         enabled:!editor.testing
+        readyToStart:bootstrap.ready&&!bootstrap.busy
         configuration:editor.document?editor.previewSettings():null
         panelOpen:window.visible&&!editor.testing
+    }
+    BootstrapControl {
+        id:bootstrap
+        enabled:!editor.testing
+        onPreparing:{editor.autostartRequested=false;editor.previewOn=false}
+        onRefreshed:{
+            if(!window.visible)return
+            if(!ready){tabs.currentIndex=2;if(!state.controllerReady)editor.message=qsTr("Complete Setup to load your profiles.")}
+            if(state.controllerReady&&!editor.document&&!bridge.busy)bridge.request("read",[])
+            if(ready)editor.maybeAutostart()
+        }
     }
     Bridge {
         id: bridge
@@ -105,6 +121,7 @@ FloatingWindow {
         anchors.left: parent.left
         anchors.right: parent.right
         visible: !window.collapsed
+        onCurrentIndexChanged:if(currentIndex===2){editor.autostartRequested=false;editor.previewOn=false}
         TabButton { text: qsTr("Camera") }
         TabButton { text: qsTr("Background") }
         TabButton { text: qsTr("Setup") }
@@ -133,7 +150,8 @@ FloatingWindow {
         visible: !window.collapsed && tabs.currentIndex < 3
         section: ["camera", "background", "setup", "test", "about"][tabs.currentIndex]
         outputControl:outputController
-        setupContent: Component { SetupPanel {outputControl:editor.outputControl} }
+        processingReady:editor.testing||bootstrap.ready
+        setupContent: Component { SetupPanel {outputControl:editor.outputControl;bootstrapControl:bootstrap} }
         panelOpen: window.visible
         busy: bridge.busy
         color: window.color

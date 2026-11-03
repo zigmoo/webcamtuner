@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
 set -euo pipefail
-WEBCAMTUNER_RUNTIME="${XDG_DATA_HOME:-$HOME/.local/share}/webcamtuner/runtime"
-python3 -m venv --system-site-packages "$WEBCAMTUNER_RUNTIME"
-"$WEBCAMTUNER_RUNTIME/bin/python" -m pip install --disable-pip-version-check onnxruntime==1.31.0
-"$WEBCAMTUNER_RUNTIME/bin/python" -c 'import cv2, numpy, PIL, onnxruntime; print("WebcamTuner preview runtime ready")'
+WEBCAMTUNER_BIN="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+exec python3 "$WEBCAMTUNER_BIN/first-run.py" prepare

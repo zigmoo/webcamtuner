@@ -43,6 +43,7 @@ Rectangle {
     }
     property Component setupContent: null
     property bool testing: false
+    property bool processingReady: true
     property string snapshotDirectory: ""
     property string remoteSummary: ""
     property real zoom: 1
@@ -116,6 +117,7 @@ Rectangle {
     onBusyChanged: maybeAutostart()
     onImageReadyChanged: { maybeAutostart(); if (imageReady && dirty && !automaticWritesPaused) autosave.restart() }
     function maybeAutostart() {
+        if(!processingReady)return
         if (!testing && !root.outputControl.checked) return
         if (root.outputControl.state && root.outputControl.state.processed && !root.publishing) return
         if (!autostartRequested || !autostartCamera || !panelOpen || !document || !cameraChoiceReady
@@ -272,6 +274,7 @@ Rectangle {
         request("trash-background", ["--path", trashCandidate.path, "--id", trashCandidate.id])
     }
     function refreshBackgrounds() {
+        if(!processingReady)return
         if (busy || libraryPending) { libraryRefresh.restart(); return }
         libraryPending = true
         if (!backgroundLibrary.directory) libraryMessage = qsTr("Loading backgrounds…")
@@ -624,14 +627,14 @@ Rectangle {
             id: profileActions
             LabelText {
                 objectName: "profileSaveState"
-                text: !root.document ? qsTr("Loading…") : root.saveFailed ? qsTr("Could not save") : root.savePending ? qsTr("Saving…") : root.dirty ? (root.profileName.trim() ? qsTr("Waiting to save…") : qsTr("Name this profile")) : qsTr("Saved")
+                text: !root.document ? (!root.processingReady&&root.section==="setup"?qsTr("Setup needed"):qsTr("Loading…")) : root.saveFailed ? qsTr("Could not save") : root.savePending ? qsTr("Saving…") : root.dirty ? (root.profileName.trim() ? qsTr("Waiting to save…") : qsTr("Name this profile")) : qsTr("Saved")
                 color: root.saveFailed ? "#f1b58a" : root.accent
                 Layout.preferredWidth: Math.min(160, implicitWidth)
             }
             Button { visible:root.saveFailed||root.labelSaveFailed; text:qsTr("Retry"); enabled:!root.busy; onClicked:{if(root.labelSaveFailed){root.labelSaveFailed=false;root.flushLabel()}else root.save()} }
-            Button { objectName: "reloadSaved"; text: qsTr("Reload saved"); onClicked: root.dirty ? discardDialog.open() : root.request("read", []) }
+            Button { objectName: "reloadSaved"; text: qsTr("Reload saved"); enabled:root.document!==null;onClicked: root.dirty ? discardDialog.open() : root.request("read", []) }
             Item { Layout.fillWidth: true }
-            Button { objectName: "remoteCameras"; text: qsTr("Remote cameras"); onClicked: root.request("remote", []) }
+            Button { objectName: "remoteCameras"; text: qsTr("Remote cameras");enabled:root.document!==null;onClicked: root.request("remote", []) }
         }
         LabelText { id: saveStatus; objectName: "saveStatus"; text: root.message; color: root.accent; Layout.fillWidth: true; maximumLineCount: 3; elide: Text.ElideRight }
         LabelText { visible: root.remoteSummary !== ""; text: root.remoteSummary; Layout.fillWidth: true; font.pixelSize: 12 }
@@ -665,9 +668,10 @@ Rectangle {
             width: editorScroll.availableWidth
             height: implicitHeight
             spacing: 14
-            LabelText { id: pageIntro; text: qsTr("Frame your camera. Choose a background. Your look saves automatically."); color: "#a9b4c1"; Layout.fillWidth: true }
+            LabelText { id: pageIntro; text:root.section==="setup"?qsTr("Prepare WebcamTuner and connect your output to other apps."):qsTr("Frame your camera. Choose a background. Your look saves automatically."); color: "#a9b4c1"; Layout.fillWidth: true }
             RowLayout {
                 id: profileRow
+                visible:root.section!=="setup"
                 Layout.fillWidth: true
                 ComboBox {
                     id: profileChoice; objectName: "profileChoice"
@@ -705,7 +709,7 @@ Rectangle {
                     }
                     Button {
                         text: root.previewOn ? (root.publishing?qsTr("Hide preview"):qsTr("Camera off")) : qsTr("Preview camera")
-                        enabled: root.cameraChoiceReady && !root.cameraPending && root.savedCamera !== "" && root.sourceKind === "local" && !root.testing && (root.previewOn || root.backgroundMode !== "image" || root.imageReady)
+                        enabled: root.processingReady && root.cameraChoiceReady && !root.cameraPending && root.savedCamera !== "" && root.sourceKind === "local" && !root.testing && (root.previewOn || root.backgroundMode !== "image" || root.imageReady)
                         onClicked: { root.autostartRequested = false; root.previewOn = !root.previewOn }
                     }
                     Button {
@@ -958,6 +962,14 @@ Rectangle {
                 LabelText { text: root.libraryMessage; visible: text !== ""; color: root.accent; Layout.fillWidth: true }
                 LabelText { objectName: "backgroundFeedback"; visible: root.backgroundMode !== "none"; text: root.backgroundFeedback; color: root.backgroundMode === "image" && !root.imageReady ? "#f1b58a" : root.accent; Layout.fillWidth: true }
             }
+            Loader {
+                objectName: "setupLoader"
+                Layout.fillWidth: true
+                Layout.preferredHeight: item ? item.implicitHeight : 0
+                visible: root.section === "setup"
+                active: root.section === "setup" && root.setupContent !== null
+                sourceComponent: root.setupContent
+            }
             CheckBox {
                 objectName: "restoreToggle"
                 visible: root.section === "all" || root.section === "setup"
@@ -974,14 +986,6 @@ Rectangle {
                 nextCheckState: function() { return checkState }
                 onClicked: root.toggleAutostart()
             }
-            Loader {
-                objectName: "setupLoader"
-                Layout.fillWidth: true
-                Layout.preferredHeight: item ? item.implicitHeight : 0
-                visible: root.section === "setup"
-                active: root.section === "setup" && root.setupContent !== null
-                sourceComponent: root.setupContent
-            }
             Rectangle { Layout.fillWidth: true; height: 1; color: "#39414b" }
             Button {
                 objectName: "outputHelpToggle"
@@ -993,18 +997,18 @@ Rectangle {
                 contentItem: LabelText { text: parent.text; font.bold: true; verticalAlignment: Text.AlignVCenter }
                 onClicked: root.outputHelpExpanded = !root.outputHelpExpanded
             }
-            LabelText { visible: root.section === "all" || root.section === "setup"; text: qsTr("Camera processing: preview only"); color: root.accent; Layout.fillWidth: true }
+            LabelText { visible: root.section === "all" || root.section === "setup"; text: root.publishing?qsTr("Camera output: published as WebcamTuner"):qsTr("Camera output: stopped"); color: root.accent; Layout.fillWidth: true }
             ColumnLayout {
                 objectName: "outputHelpBody"
                 Layout.fillWidth: true
                 visible: root.outputHelpExpanded && (root.section === "all" || root.section === "setup")
                 spacing: 10
                 LabelText {
-                    text: qsTr("Camera effects currently stay in the preview. Setup can publish a separate synthetic test camera; your processed camera is not connected to it yet.")
+                    text: qsTr("Start camera output to publish your camera crop, background and label through your user PipeWire session. Test shows independent readbacks of that published video.")
                     Layout.fillWidth: true
                 }
                 LabelText {
-                    text: qsTr("Once virtual-camera output is available:\n1. Start output in WebcamTuner.\n2. Open the other app’s video or camera settings and select WebcamTuner.\n3. Turn off that app’s background replacement and blur to use the look you set here.")
+                    text: qsTr("1. Start output in WebcamTuner.\n2. Enable the user-only Zoom camera adapter once, then quit and reopen native Zoom.\n3. Select WebcamTuner in the app’s camera settings.\n4. Turn off the app’s background replacement and blur to use the look you set here.")
                     Layout.fillWidth: true
                 }
                 LabelText {

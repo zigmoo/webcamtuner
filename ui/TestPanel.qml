@@ -27,7 +27,7 @@ ScrollView {
         Plain {text:qsTr("Test the outputs");font.pixelSize:22;font.bold:true}
         Plain {text:qsTr("These previews read the published camera through two real consumer paths. They include the background, camera crop and label baked into the video; they do not reuse the Camera tab’s preview.")}
         RowLayout {
-            Button {text:qsTr("Start camera output");enabled:root.outputControl!==null&&!root.outputControl.busy&&!root.outputControl.published;onClicked:root.outputControl.start()}
+            Button {text:qsTr("Start camera output");enabled:root.outputControl!==null&&root.outputControl.readyToStart&&!root.outputControl.busy&&!root.outputControl.published;onClicked:root.outputControl.start()}
             Button {text:qsTr("Stop output");enabled:root.outputControl!==null;onClicked:root.outputControl.stop()}
         }
         Plain {text:root.outputControl?root.outputControl.feedback:"";color:"#93c5aa";visible:text!==""}

@@ -5,8 +5,25 @@ WEBCAMTUNER_GPU_RUNTIME="${XDG_DATA_HOME:-$HOME/.local/share}/webcamtuner/runtim
 if [[ -f "$WEBCAMTUNER_GPU_RUNTIME/enabled.json" && -x "$WEBCAMTUNER_GPU_RUNTIME/bin/python" && "${WEBCAMTUNER_FORCE_CPU:-0}" != 1 ]]; then
   WEBCAMTUNER_PYTHON="$WEBCAMTUNER_GPU_RUNTIME/bin/python"
 fi
+if [[ -n "${WEBCAMTUNER_RUNTIME_PYTHON:-}" ]]; then
+  [[ "$WEBCAMTUNER_RUNTIME_PYTHON" = /* ]] || exit 1
+  WEBCAMTUNER_PYTHON="$WEBCAMTUNER_RUNTIME_PYTHON"
+fi
 if [[ ! -x "$WEBCAMTUNER_PYTHON" ]]; then
-  printf '%s\n' '{"error":"WebcamTuner preview runtime is missing. Run npm run setup:preview in the source project."}'
+  printf '%s\n' '{"error":"Open WebcamTuner → Setup and click Prepare WebcamTuner."}'
   exit 1
 fi
+# Resolve the venv directory, retaining its bin/python link and venv semantics.
+if [[ -z "${WEBCAMTUNER_RUNTIME_PYTHON:-}" ]]; then
+  WEBCAMTUNER_RUNTIME_DIR="$(readlink -f -- "$(dirname -- "$WEBCAMTUNER_PYTHON")/..")"
+  WEBCAMTUNER_PYTHON="$WEBCAMTUNER_RUNTIME_DIR/bin/python"
+fi
+WEBCAMTUNER_MEDIA="${XDG_DATA_HOME:-$HOME/.local/share}/webcamtuner/media/current"
+if [[ -d "$WEBCAMTUNER_MEDIA" ]]; then
+  export GST_PLUGIN_PATH_1_0="$(readlink -f -- "$WEBCAMTUNER_MEDIA")${GST_PLUGIN_PATH_1_0:+:$GST_PLUGIN_PATH_1_0}"
+  if [[ -d "$WEBCAMTUNER_MEDIA/lib" ]]; then
+    export LD_LIBRARY_PATH="$(readlink -f -- "$WEBCAMTUNER_MEDIA/lib")${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+  fi
+fi
+export ORT_DISABLE_TELEMETRY=1 PYTHONDONTWRITEBYTECODE=1 DO_NOT_TRACK=1
 exec "$WEBCAMTUNER_PYTHON" "$@"

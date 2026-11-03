@@ -1,4 +1,4 @@
 #!/usr/bin/env bash
 set -euo pipefail
 WEBCAMTUNER_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-exec node "$WEBCAMTUNER_ROOT/dist/cli.js" "$@"
+exec python3 "$WEBCAMTUNER_ROOT/bin/controller-launch.py" "$@"

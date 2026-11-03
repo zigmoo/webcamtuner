@@ -1,27 +1,4 @@
 #!/usr/bin/env bash
 set -euo pipefail
 WEBCAMTUNER_BIN="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-WEBCAMTUNER_GPU_RUNTIME="${XDG_DATA_HOME:-$HOME/.local/share}/webcamtuner/runtime-gpu"
-python3 -m venv --system-site-packages "$WEBCAMTUNER_GPU_RUNTIME"
-"$WEBCAMTUNER_GPU_RUNTIME/bin/python" -m pip install --only-binary=:all: --disable-pip-version-check 'onnxruntime-gpu[cuda,cudnn]==1.31.0'
-"$WEBCAMTUNER_GPU_RUNTIME/bin/python" - "$WEBCAMTUNER_BIN" "$WEBCAMTUNER_GPU_RUNTIME" <<'PY'
-import importlib.util,json,os,sys
-sys.dont_write_bytecode = True
-from pathlib import Path
-import numpy as np
-root, runtime = Path(sys.argv[1]), Path(sys.argv[2])
-spec = importlib.util.spec_from_file_location('preview', root/'process_preview.py')
-module = importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
-segmenter = module.Segmenter()
-mask = segmenter.mask(np.zeros((360,640,3),dtype=np.uint8))
-if segmenter.provider != 'CUDAExecutionProvider' or not np.isfinite(mask).all():
-    raise SystemExit('GPU verification failed; CPU runtime remains available.')
-marker = runtime/'enabled.json'
-temporary = runtime/'enabled.pending'
-with temporary.open('w') as stream:
-    os.chmod(temporary,0o600)
-    json.dump({'provider':segmenter.provider,'onnxruntime':module.ort.__version__},stream)
-    stream.flush();os.fsync(stream.fileno())
-os.replace(temporary,marker)
-print('GPU runtime verified and enabled. Restart camera preview to apply it.')
-PY
+exec python3 "$WEBCAMTUNER_BIN/first-run.py" gpu

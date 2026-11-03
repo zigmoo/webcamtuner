@@ -63,8 +63,16 @@ def status():
 
 def download(url, maximum):
     parsed = urllib.parse.urlparse(url)
+    if parsed.scheme == 'file' and not parsed.netloc:
+        path = Path(urllib.parse.unquote(parsed.path)).resolve(strict=True)
+        details = path.stat()
+        if path.parent != Path('/var/cache/pacman/pkg') or details.st_uid != 0 or details.st_mode & 0o022 or not path.is_file():
+            raise RuntimeError('Only root-owned pacman cache files can supply local signed packages.')
+        if details.st_size > maximum:
+            raise RuntimeError('Cached signed package exceeds its size limit.')
+        return path.read_bytes()
     if parsed.scheme != 'https' or parsed.username or parsed.password:
-        raise RuntimeError('Camera adapter requires an HTTPS package repository.')
+        raise RuntimeError('Signed packages require HTTPS or the root-owned pacman cache.')
     with urllib.request.urlopen(url, timeout=20) as response:
         if urllib.parse.urlparse(response.url).scheme != 'https':
             raise RuntimeError('Camera adapter download redirected away from HTTPS.')
