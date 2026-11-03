@@ -10,6 +10,8 @@ import subprocess
 import time
 import sys
 from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import camera_stream
 
 UNIT = 'webcamtuner-test.service'
 NODE = 'webcamtuner.test'
@@ -69,17 +71,36 @@ def inventory():
         nodes = video_sources(json.loads(dump.stdout))
     except (OSError, RuntimeError, ValueError, subprocess.TimeoutExpired) as error:
         errors.append(str(error)[:500])
-    target = next((item for item in nodes if item['testOutput']), None)
+    target = next((item for item in nodes if item['node'] == camera_stream.NODE), None)
+    processed = target is not None
+    if target is None:
+        target = next((item for item in nodes if item['testOutput']), None)
     return {'devices': devices, 'pipewire': nodes, 'errors': errors,
-            'output': {'name': 'WebcamTuner', 'node': NODE, 'nodeId': target['id'] if target else None,
-                       'published': target is not None, 'kind': 'Synthetic test pattern', 'processed': False}}
+            'output': {'name': 'WebcamTuner', 'node': camera_stream.NODE if processed else NODE, 'nodeId': target['id'] if target else None,
+                       'published': target is not None, 'kind': 'Processed camera' if processed else 'Synthetic test pattern', 'processed': processed}}
 
 
 def run(args, timeout=10):
     return subprocess.run(args, capture_output=True, text=True, timeout=timeout)
 
 
-def status():
+def status(test_only=False):
+    if not test_only:
+        try:
+            value = camera_stream.command({'operation': 'status'})
+            dump = json.loads(run(['pw-dump']).stdout)
+            node = next((n for n in dump if n.get('type') == 'PipeWire:Interface:Node' and n.get('info', {}).get('props', {}).get('node.name') == camera_stream.NODE), None)
+            published = bool(node and value.get('published'))
+            return dict(value, state='output-published' if published else value.get('state', 'starting'), published=published,
+                        synthetic=False, nodeId=node['id'] if node else None,
+                        nodeSerial=node['info']['props']['object.serial'] if node else None,
+                        format={'width':1280, 'height':720, 'fps':30},
+                        message='Processed camera is published as WebcamTuner.' if published else 'Camera output is starting or has stalled.')
+        except (OSError, RuntimeError, ValueError):
+            active = run(['systemctl', '--user', 'is-active', camera_stream.UNIT]).stdout.strip()
+            if active in ('active', 'activating'):
+                return {'state':'starting', 'published':False, 'processed':True, 'serviceActive':True,
+                        'message':'Camera output service is running; waiting for its status. Stop output is available.'}
     missing = [name for name in ('systemctl', 'systemd-run', 'pw-dump', 'gst-launch-1.0', 'gst-inspect-1.0') if not shutil.which(name)]
     if missing:
         return {'state': 'unavailable', 'published': False, 'missing': missing, 'message': 'Required desktop components are unavailable: ' + ', '.join(missing)}
@@ -101,6 +122,8 @@ def status():
 
 def start():
     current = status()
+    if current.get('processed'):
+        raise RuntimeError('Stop processed output before starting a test pattern.')
     if current['state'] == 'unavailable' or current['published']:
         return current
     probe = run([sys.executable, '-c', 'import gi; gi.require_version("Gst", "1.0"); from gi.repository import Gst'])
@@ -129,20 +152,70 @@ def start():
 def stop():
     result = run(['systemctl', '--user', 'stop', UNIT])
     # Stopping an already collected transient unit is idempotent.
-    current = status()
+    current = status(test_only=True)
     if current.get('published') or current['state'] == 'starting':
         raise RuntimeError(result.stderr.strip() or 'Test source did not stop.')
     return current
 
 
+def start_output(request):
+    if not request or len(request.encode()) > camera_stream.MAX_COMMAND:
+        raise ValueError('A bounded camera configuration is required.')
+    value = json.loads(request)
+    if not isinstance(value, dict) or not isinstance(value.get('camera'), str):
+        raise ValueError('Choose a local camera first.')
+    existing = status()
+    if existing.get('processed'):
+        camera_stream.command(value)
+        return status()
+    stop()
+    run(['systemctl', '--user', 'reset-failed', camera_stream.UNIT])
+    root = Path(__file__).resolve().parent
+    result = run(['systemd-run', '--user', '--unit=' + camera_stream.UNIT, '--collect',
+                  '--property=NoNewPrivileges=yes', '--property=UMask=0077', '--property=TimeoutStopSec=5',
+                  str(root / 'preview-python'), str(root / 'process_preview.py'), '--publish', '--request', request])
+    if result.returncode:
+        raise RuntimeError(result.stderr.strip()[:1000])
+    deadline = time.monotonic() + 20
+    while time.monotonic() < deadline:
+        current = status()
+        if current.get('published') and current.get('processed'):
+            return current
+        active = run(['systemctl', '--user', 'is-active', camera_stream.UNIT]).stdout.strip()
+        if active not in ('active', 'activating'):
+            log = run(['journalctl', '--user', '-u', camera_stream.UNIT, '-n', '4', '--no-pager', '-o', 'cat']).stdout
+            raise RuntimeError('Camera output could not start. ' + log[-1200:])
+        time.sleep(.2)
+    run(['systemctl', '--user', 'stop', camera_stream.UNIT])
+    raise RuntimeError('Camera output did not deliver its first frame. Check the camera and try again.')
+
+
+def stop_output():
+    run(['systemctl', '--user', 'stop', camera_stream.UNIT])
+    stop()
+    current = status()
+    if current.get('published'):
+        raise RuntimeError('Camera output has not stopped yet.')
+    return dict(current, message='Camera output stopped. No processed camera video is published.')
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=['status', 'start-test', 'stop-test', 'diagnostics', 'inventory'])
+    parser.add_argument('action', choices=['status', 'start-test', 'stop-test', 'diagnostics', 'inventory', 'start-output', 'stop-output', 'setup-zoom', 'disable-zoom', 'zoom-status'])
+    parser.add_argument('--request')
     args = parser.parse_args()
     try:
-        result = inventory() if args.action == 'inventory' else start() if args.action == 'start-test' else stop() if args.action == 'stop-test' else status()
+        if args.action in ('setup-zoom', 'disable-zoom', 'zoom-status'):
+            import camera_adapter
+            result = camera_adapter.setup() if args.action == 'setup-zoom' else camera_adapter.disable() if args.action == 'disable-zoom' else camera_adapter.status()
+        elif args.action == 'start-output':
+            result = start_output(args.request)
+        elif args.action == 'stop-output':
+            result = stop_output()
+        else:
+            result = inventory() if args.action == 'inventory' else start() if args.action == 'start-test' else stop() if args.action == 'stop-test' else status()
         if args.action == 'diagnostics':
-            result['log'] = run(['journalctl', '--user', '-u', UNIT, '-n', '20', '--no-pager']).stdout[-6000:]
+            result['log'] = run(['journalctl', '--user', '-u', UNIT, '-u', camera_stream.UNIT, '-n', '20', '--no-pager']).stdout[-6000:]
         print(json.dumps(result))
     except (RuntimeError, subprocess.TimeoutExpired, OSError, ValueError) as error:
         print(json.dumps({'state': 'error', 'published': False, 'message': str(error)[:1000]}))

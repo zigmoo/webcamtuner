@@ -46,6 +46,7 @@ FloatingWindow {
         tabs.currentIndex = 2
     }
     function openCamera() { openEditor(); tabs.currentIndex=0 }
+    function openTest() { openEditor();editor.autostartRequested=false;editor.previewOn=false;tabs.currentIndex=3 }
     function openBackgrounds() {
         openEditor()
         editor.autostartRequested = false
@@ -74,6 +75,12 @@ FloatingWindow {
             Hyprland.dispatch('(function() local w=hl.get_window("title:^WebcamTuner$"); if w then return hl.dsp.window.float({action="set", window=w}) end; return hl.dsp.no_op() end)()')
         }
     }
+    OutputControl {
+        id:outputController
+        enabled:!editor.testing
+        configuration:editor.document?editor.previewSettings():null
+        panelOpen:window.visible&&!editor.testing
+    }
     Bridge {
         id: bridge
         onReceived: function(action, result) { editor.accept(action, result) }
@@ -101,6 +108,7 @@ FloatingWindow {
         TabButton { text: qsTr("Camera") }
         TabButton { text: qsTr("Background") }
         TabButton { text: qsTr("Setup") }
+        TabButton { text: qsTr("Test") }
         TabButton { text: qsTr("About") }
     }
     AboutPanel {
@@ -108,7 +116,13 @@ FloatingWindow {
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.bottom: parent.bottom
-        visible: !window.collapsed && tabs.currentIndex === 3
+        visible: !window.collapsed && tabs.currentIndex === 4
+    }
+    TestPanel {
+        anchors.top:tabs.bottom;anchors.left:parent.left;anchors.right:parent.right;anchors.bottom:parent.bottom
+        visible:!window.collapsed&&tabs.currentIndex===3
+        panelOpen:window.visible
+        outputControl:outputController
     }
     Editor {
         id: editor
@@ -116,9 +130,10 @@ FloatingWindow {
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.bottom: parent.bottom
-        visible: !window.collapsed && tabs.currentIndex !== 3
-        section: ["camera", "background", "setup", "about"][tabs.currentIndex]
-        setupContent: Component { SetupPanel {} }
+        visible: !window.collapsed && tabs.currentIndex < 3
+        section: ["camera", "background", "setup", "test", "about"][tabs.currentIndex]
+        outputControl:outputController
+        setupContent: Component { SetupPanel {outputControl:editor.outputControl} }
         panelOpen: window.visible
         busy: bridge.busy
         color: window.color

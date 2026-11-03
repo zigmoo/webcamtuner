@@ -54,7 +54,8 @@ class Sources(unittest.TestCase):
             output.video_sources({})
 
     def test_native_zoom_only(self):
-        with patch.object(apps.shutil, 'which', return_value='/usr/bin/zoom'), patch.object(apps.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0, '', '')) as run:
+        import camera_adapter
+        with patch.object(camera_adapter, 'status', return_value={'enabled':False}), patch.object(apps.shutil, 'which', return_value='/usr/bin/zoom'), patch.object(apps.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0, '', '')) as run:
             self.assertIn('Zoom desktop', apps.launch('zoom')['message'])
             self.assertEqual(run.call_args.args[0][-1], '/usr/bin/zoom')
             self.assertFalse(any('http' in arg for arg in run.call_args.args[0]))

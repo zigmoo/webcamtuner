@@ -4,6 +4,9 @@ import Quickshell.Io
 Item {
     id: root
     property bool active: false
+    property bool sharedOutput: false
+    property int outputRevision: 0
+    readonly property int effectiveGeneration: sharedOutput ? outputRevision : desiredGeneration
     property var configuration: ({})
     property string pluginRoot: Qt.resolvedUrl("../").toString().replace(/^file:\/\//, "").replace(/\/$/, "")
     property string frameUrl: ""
@@ -20,14 +23,14 @@ Item {
     property string snapshotRequestId: ""
     property bool starting: false
     property bool shuttingDown: false
-    readonly property bool snapshotReady: active && frameUrl !== "" && !updateDelay.running && desiredGeneration === appliedGeneration && !snapshotPending
+    readonly property bool snapshotReady: active && frameUrl !== "" && !updateDelay.running && effectiveGeneration === appliedGeneration && !snapshotPending
     signal snapshotSaved(var result)
     signal snapshotFailed(string message)
     function takeSnapshot() {
         if (!snapshotReady) return
         snapshotRequestId = Date.now().toString() + "-" + Math.floor(Math.random() * 1000000).toString()
         snapshotPending = true
-        process.write(JSON.stringify({operation: "snapshot", requestId: snapshotRequestId, expectedRevision: desiredGeneration}) + "\n")
+        process.write(JSON.stringify({operation: "snapshot", requestId: snapshotRequestId, expectedRevision: effectiveGeneration}) + "\n")
         snapshotTimeout.restart()
     }
     Timer {
@@ -46,7 +49,7 @@ Item {
             starting=true
             frameUrl = ""
             labelBitmapUrl="";labelBitmapKey=""
-            process.command = [pluginRoot + "/bin/preview-python", pluginRoot + "/bin/process_preview.py", "--ui-overlay", "--request", JSON.stringify(Object.assign({}, configuration, {configurationRevision: desiredGeneration}))]
+            process.command = sharedOutput ? ["python3",pluginRoot+"/bin/stream-client.py"] : [pluginRoot + "/bin/preview-python", pluginRoot + "/bin/process_preview.py", "--ui-overlay", "--request", JSON.stringify(Object.assign({}, configuration, {configurationRevision: desiredGeneration}))]
             process.running = true
             firstFrameTimeout.restart()
         } else {
@@ -68,7 +71,7 @@ Item {
     Timer {
         id: updateDelay
         interval: 180
-        onTriggered: if (process.running && root.configuration) process.write(JSON.stringify(Object.assign({}, root.configuration, {configurationRevision: root.desiredGeneration})) + "\n")
+        onTriggered: if (process.running && root.configuration && !root.sharedOutput) process.write(JSON.stringify(Object.assign({}, root.configuration, {configurationRevision: root.desiredGeneration})) + "\n")
     }
     Process {
         id: process

@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { readStore, saveStore, storePath, cropPixels } from './profiles.js'
 import { cameraAliases } from './cameras.js'
 
-const cli = Cli.create('webcamtuner', { version: '0.8.7', description: 'WebcamTuner preview: persist camera framing and background profiles. Preview autostart is a saved profile choice.' })
+const cli = Cli.create('webcamtuner', { version: '0.9.0', description: 'WebcamTuner preview: persist camera framing and background profiles. Preview autostart is a saved profile choice.' })
 cli.command('read', { description: 'Read profiles and their revision without starting capture', run: () => readStore() })
 cli.command('devices', { description: 'Read stable local webcam identifiers without opening a camera', run: () => ({ aliases: cameraAliases() }) })
 cli.command('save', {
@@ -17,7 +17,7 @@ cli.command('plan', {
   options: z.object({ width: z.number().int().min(2).max(16384).default(1920), height: z.number().int().min(2).max(16384).default(1080) }),
   run: c => {
     const store = readStore(), profile = store.profiles.find(p => p.id === store.activeProfile)!
-    return { profile, crop: cropPixels(profile.crop, c.options.width, c.options.height), output: 'not-implemented', backgrounds: 'local-preview' }
+    return { profile, crop: cropPixels(profile.crop, c.options.width, c.options.height), output: 'user-session PipeWire publisher; explicit Start output', backgrounds: 'shared compositor' }
   },
 })
 function backgroundLibrary(action: string, paths?: string, crop?: string, selectedPath?: string) {
@@ -95,7 +95,7 @@ cli.command('remote', {
 })
 cli.command('doctor', {
   description: 'Report prototype capabilities and profile path',
-  run: () => ({ profiles: storePath(), cropPreview: true, profilePersistence: true, virtualCamera: false, backgroundProcessing: 'local-preview', matting: 'RVM MobileNetV3 with recurrent states', capture: 'largest supported 16:9 mode up to UHD 4K', previewDependencies: ['Python runtime from npm run setup:preview', 'OpenCV', 'NumPy', 'Pillow', 'ONNX Runtime 1.31.0'], remoteDiscovery: 'optional webcam_tool adapter', remoteCapture: false }),
+  run: () => ({ profiles: storePath(), cropPreview: true, profilePersistence: true, virtualCamera: 'user-session PipeWire; optional user-only V4L2 adapter for native Zoom', backgroundProcessing: 'shared compositor with independent consumer readbacks in Test', appAcceptance: 'requires verification in each actual app', matting: 'RVM MobileNetV3 with recurrent states', capture: 'largest supported 16:9 mode up to UHD 4K', output: '1280x720; nominal 30 fps; actual fresh FPS measured separately', previewDependencies: ['Python runtime from npm run setup:preview', 'OpenCV', 'NumPy', 'Pillow', 'ONNX Runtime 1.31.0'], remoteDiscovery: 'optional webcam_tool adapter', remoteCapture: false }),
 })
 export default cli
 cli.serve()

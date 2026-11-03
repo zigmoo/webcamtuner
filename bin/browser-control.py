@@ -7,15 +7,21 @@ from pathlib import Path
 import shutil
 import subprocess
 import uuid
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 URLS = {'teams': 'https://teams.microsoft.com/',
         'meet': 'https://meet.google.com/', 'chat': 'https://chat.google.com/'}
-def launch(app):
+def launch(app, restart=False):
     if app == 'zoom':
         zoom = shutil.which('zoom')
         if not zoom:
             raise RuntimeError('Zoom desktop is not installed. Install the Linux Zoom package first.')
-        command = [zoom]
+        from camera_adapter import status, restart_zoom
+        if restart:
+            restart_zoom()
+        adapter = status()
+        command = ['python3', str(Path(__file__).resolve().with_name('zoom-camera.py'))] if adapter['enabled'] else [zoom]
         message = 'Zoom desktop launch requested. Open Video settings to check its camera menu. WebcamTuner output compatibility still needs verification.'
     else:
         browser = shutil.which('brave') or shutil.which('chromium')
@@ -40,9 +46,10 @@ def launch(app):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('app', choices=['zoom', *URLS])
+    parser.add_argument('--restart', action='store_true')
     args = parser.parse_args()
     try:
-        print(json.dumps(launch(args.app)))
+        print(json.dumps(launch(args.app, args.restart)))
     except (OSError, RuntimeError, subprocess.TimeoutExpired) as error:
         print(json.dumps({'message': str(error)[:1000]}))
         raise SystemExit(1)

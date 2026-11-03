@@ -27,6 +27,10 @@ Rectangle {
     property int saveGeneration: -1
     property string message: qsTr("Loading saved profiles…")
     property bool previewOn: false
+    property bool resumeOutputPreview: false
+    property var outputControl: noOutput
+    QtObject { id:noOutput;property bool checked:true;property bool published:false;property bool busy:false;property int configurationRevision:0 }
+    readonly property bool publishing: root.outputControl.published
     property string section: "all"
     property var backgroundLibrary: ({directory: "", items: []})
     property bool libraryPending: false
@@ -112,6 +116,8 @@ Rectangle {
     onBusyChanged: maybeAutostart()
     onImageReadyChanged: { maybeAutostart(); if (imageReady && dirty && !automaticWritesPaused) autosave.restart() }
     function maybeAutostart() {
+        if (!testing && !root.outputControl.checked) return
+        if (root.outputControl.state && root.outputControl.state.processed && !root.publishing) return
         if (!autostartRequested || !autostartCamera || !panelOpen || !document || !cameraChoiceReady
             || busy || cameraPending || mirrorPending || autostartPending || sourceKind !== "local"
             || savedCamera === "" || cameraIndex() < 0 || (backgroundMode === "image" && !imageReady)) return
@@ -573,11 +579,23 @@ Rectangle {
     Timer { id: labelSave; interval: 400; onTriggered: root.flushLabel() }
     Timer { id: libraryRefresh; interval: 200; onTriggered: root.refreshBackgrounds() }
     Timer { id: cameraRefresh; interval: 200; onTriggered: root.refreshCameraInventory() }
+    Connections {
+        target:root.outputControl
+        ignoreUnknownSignals:true
+        function onStarting(){root.resumeOutputPreview=root.previewOn;root.autostartRequested=false;root.previewOn=false}
+        function onStarted(){if(root.resumeOutputPreview&&root.panelOpen)root.previewOn=true}
+        function onStopped(){root.resumeOutputPreview=false;if(root.publishing||root.previewOn)root.previewOn=false}
+        function onCheckedChanged(){root.maybeAutostart()}
+        function onPublishedChanged(){root.maybeAutostart()}
+        function onFailed(message){root.message=message}
+    }
     Loader {
         id: processor
         active: root.previewOn && root.panelOpen && root.sourceKind === "local" && !root.testing
         source: Qt.resolvedUrl("ProcessedPreview.qml")
         onLoaded: {
+            item.sharedOutput = Qt.binding(function() {return root.publishing})
+            item.outputRevision = Qt.binding(function() {return root.outputControl.configurationRevision})
             item.configuration = Qt.binding(function() { return root.previewSettings() })
             item.active = true
         }
@@ -655,7 +673,7 @@ Rectangle {
                     Layout.preferredWidth: 145
                     model: root.document ? root.document.profiles : []
                     textRole: "name"; currentIndex: root.profileIndex
-                    enabled: !root.dirty && !root.busy
+                    enabled: !root.publishing && !root.outputControl.busy && !root.dirty && !root.busy
                     onActivated: function(index) { root.restore(index); root.mark() }
                 }
                 TextField {
@@ -676,7 +694,7 @@ Rectangle {
                         objectName: "cameraChoice"; Layout.fillWidth: true
                         model: root.cameras; textRole: "description"
                         currentIndex: root.cameraIndex()
-                        enabled: root.cameraChoiceReady && !root.cameraQueued && !root.mirrorQueued && !root.autostartQueued && !root.cameraPending && !root.mirrorPending && !root.autostartPending
+                        enabled: !root.publishing && !root.outputControl.busy && root.cameraChoiceReady && !root.cameraQueued && !root.mirrorQueued && !root.autostartQueued && !root.cameraPending && !root.mirrorPending && !root.autostartPending
                         displayText: root.cameraPending || root.cameraQueued ? qsTr("Selecting camera…") : root.cameraChoiceReady && root.cameras.length === 0 ? qsTr("No webcam connected") : currentIndex < 0 ? qsTr("Detecting connected webcams…") : currentText
                         onActivated: function(index) {
                             var id = String(root.cameras[index].id)
@@ -685,7 +703,7 @@ Rectangle {
                         }
                     }
                     Button {
-                        text: root.previewOn ? qsTr("Camera off") : qsTr("Preview camera")
+                        text: root.previewOn ? (root.publishing?qsTr("Hide preview"):qsTr("Camera off")) : qsTr("Preview camera")
                         enabled: root.cameraChoiceReady && !root.cameraPending && root.savedCamera !== "" && root.sourceKind === "local" && !root.testing && (root.previewOn || root.backgroundMode !== "image" || root.imageReady)
                         onClicked: { root.autostartRequested = false; root.previewOn = !root.previewOn }
                     }

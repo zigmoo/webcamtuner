@@ -32,6 +32,7 @@ _snapshot_spec.loader.exec_module(snapshot_files)
 
 MODEL = Path(__file__).resolve().parent.parent / "models" / "rvm" / "rvm_mobilenetv3_fp32.onnx"
 OUTPUT_LOCK = threading.Lock()
+OUTPUT_HOOK = None
 
 
 def image_path(value: str) -> Path:
@@ -185,10 +186,10 @@ def crop_bounds(width: int, height: int, crop: dict) -> tuple[int, int, int, int
     return x, y, w, h
 
 
-def crop_frame(frame: np.ndarray, crop: dict) -> np.ndarray:
+def crop_frame(frame: np.ndarray, crop: dict, max_width=960, max_height=540) -> np.ndarray:
     height, width = frame.shape[:2]
     x, y, w, h = crop_bounds(width, height, crop)
-    scale = min(960 / w, 540 / h, 1)
+    scale = min(max_width / w, max_height / h, 1)
     return cv2.resize(frame[y:y + h, x:x + w], (max(2, round(w * scale)), max(2, round(h * scale))))
 
 
@@ -329,6 +330,9 @@ def orient_camera(frame: np.ndarray, mask: np.ndarray | None, mirror: bool):
 
 
 def emit(value: dict) -> None:
+    if OUTPUT_HOOK is not None:
+        OUTPUT_HOOK(value)
+        return
     with OUTPUT_LOCK:
         print(json.dumps(value, separators=(",", ":")), flush=True)
 
@@ -358,7 +362,8 @@ def save_processed_snapshot(frame, matte, settings, background):
     return {'path': str(path), 'width': cw, 'height': ch, **snapshot_files.mirror_snapshot(path)}
 
 
-def run(initial: dict, frame_limit: int = 0, ui_overlay: bool = False) -> None:
+def run(initial: dict, frame_limit: int = 0, ui_overlay: bool = False, publish: bool = False) -> None:
+    global OUTPUT_HOOK
     cv2.setNumThreads(2)
     current = validate_settings(initial)
     updates: list[dict] = []
@@ -369,6 +374,28 @@ def run(initial: dict, frame_limit: int = 0, ui_overlay: bool = False) -> None:
     alive.set()
     signal.signal(signal.SIGTERM, lambda *_: alive.clear())
     signal.signal(signal.SIGINT, lambda *_: alive.clear())
+    server, publisher = None, None
+
+    def receive(value):
+        if value.get('operation') == 'snapshot':
+            if not isinstance(value.get('requestId'), str) or not re.fullmatch(r'[a-zA-Z0-9-]{1,64}', value['requestId']):
+                raise ValueError('Invalid snapshot request')
+            with guard:
+                if snapshots:
+                    raise ValueError('A snapshot is already pending')
+                snapshots.append(value)
+        else:
+            parsed = validate_settings(value)
+            if parsed['camera'] != current['camera']:
+                raise ValueError('Stop camera output before selecting a different camera.')
+            with guard:
+                updates[:] = [parsed]
+
+    if publish:
+        from camera_stream import ControlServer, Publisher
+        server = ControlServer(receive, alive.clear)
+        OUTPUT_HOOK = server.emit
+        ui_overlay = True
 
     def read_updates():
         for line in sys.stdin:
@@ -425,7 +452,10 @@ def run(initial: dict, frame_limit: int = 0, ui_overlay: bool = False) -> None:
                     condition.notify_all()
         reader = threading.Thread(target=grab_frames, daemon=True)
         reader.start()
-        threading.Thread(target=read_updates, daemon=True).start()
+        if not publish:
+            threading.Thread(target=read_updates, daemon=True).start()
+        else:
+            publisher = Publisher()
         count, last_sequence, dropped = 0, 0, 0
         delivered = deque(maxlen=60)
         last_label_style = None
@@ -472,7 +502,7 @@ def run(initial: dict, frame_limit: int = 0, ui_overlay: bool = False) -> None:
                 alpha = segmenter.mask(frame, full_resolution=False)
                 matte = alpha
                 matte_ms = (time.monotonic() - captured) * 1000
-                frame = crop_frame(frame, current["crop"])
+                frame = crop_frame(frame, current["crop"], 1280 if publish else 960, 720 if publish else 540)
                 alpha = align_matte(alpha, source_width, source_height, current["crop"], frame.shape[1], frame.shape[0])
                 frame, alpha = orient_camera(frame, alpha, current.get("mirror", True))
                 base = frame
@@ -481,11 +511,16 @@ def run(initial: dict, frame_limit: int = 0, ui_overlay: bool = False) -> None:
                     frame, alpha = placed_foreground(full_frame, matte, current['crop'], current.get('mirror', True), placement, frame.shape[1], frame.shape[0])
                 frame = composite(frame, alpha, mode, background, current["background"].get("crop"), base)
             else:
-                frame = crop_frame(frame, current["crop"])
+                frame = crop_frame(frame, current["crop"], 1280 if publish else 960, 720 if publish else 540)
                 frame, _ = orient_camera(frame, None, current.get("mirror", True))
                 placement = current.get('foreground', {'x':0, 'y':0})
                 if placement.get('x', 0) or placement.get('y', 0):
                     frame, _ = placed_foreground(full_frame, None, current['crop'], current.get('mirror', True), placement, frame.shape[1], frame.shape[0])
+            if publisher is not None:
+                frame = fit_cover(frame, 1280, 720)
+                output_frame = apply_label_overlay(frame, current['background'].get('labelOverlay')) if mode == 'image' else frame
+                publisher.push(output_frame)
+                frame = cv2.resize(frame, (960, 540))
             if mode == 'image' and not ui_overlay: frame = apply_label_overlay(frame, current['background'].get('labelOverlay'))
             with guard:
                 snapshot = snapshots.pop() if snapshots else None
@@ -530,6 +565,7 @@ def run(initial: dict, frame_limit: int = 0, ui_overlay: bool = False) -> None:
                   "captureWidth": source_width, "captureHeight": source_height, "captureFps": source_fps, "previewFps": actual_fps,
                   "configurationRevision": current.get("configurationRevision", 0),
                   "sequence": sequence, "dropped": dropped, "processingMs": (now - began) * 1000,
+                  "outputWidth": 1280 if publish else 0, "outputHeight": 720 if publish else 0,
                   "provider": segmenter.provider if mode != "none" else "No matting",
                   "matteMs": matte_ms, "captureWaitMs": (captured - began) * 1000,
                   "retainedWidth": retained_width, "retainedHeight": retained_height})
@@ -539,6 +575,11 @@ def run(initial: dict, frame_limit: int = 0, ui_overlay: bool = False) -> None:
             time.sleep(max(0, 1 / target_fps - (time.monotonic() - began)))
     finally:
         alive.clear()
+        if publisher is not None:
+            publisher.close()
+        if server is not None:
+            server.close()
+            OUTPUT_HOOK = None
         if reader is not None:
             reader.join(timeout=2)
         if reader is None or not reader.is_alive():
@@ -552,9 +593,12 @@ if __name__ == "__main__":
     parser.add_argument("--request", required=True)
     parser.add_argument("--frames", type=int, default=0)
     parser.add_argument("--ui-overlay", action="store_true")
+    parser.add_argument("--publish", action="store_true")
     args = parser.parse_args()
     try:
-        run(json.loads(args.request), args.frames, args.ui_overlay)
+        run(json.loads(args.request), args.frames, args.ui_overlay, args.publish)
     except (ValueError, RuntimeError, OSError, cv2.error, subprocess.SubprocessError) as error:
+        if args.publish:
+            print(str(error), file=sys.stderr, flush=True)
         emit({"error": str(error)})
         raise SystemExit(1)

@@ -19,15 +19,17 @@ Item {
     property string diagnostics: ""
     property var cameraSources: ({devices: [], pipewire: [], errors: [], output: {}})
     property string sourceMessage: ""
+    property var outputControl: null
     property string pluginRoot: Qt.resolvedUrl("../").toString().replace(/^file:\/\//, "").replace(/\/$/, "")
     function request(action) {
         if (controller.running) return
         controller.command = ["python3", pluginRoot + "/bin/output-control.py", action]
         controller.running = true
     }
-    function openApp(app) {
+    function openApp(app, restart) {
         if (controller.running) return
         controller.command = ["python3", pluginRoot + "/bin/browser-control.py", app]
+        if(restart)controller.command=controller.command.concat(["--restart"])
         controller.running = true
     }
     onVisibleChanged: if (visible) { request("status"); refreshRuntime(); refreshSources() }
@@ -173,11 +175,27 @@ Item {
                 color: modelData.testOutput ? "#93c5aa" : "#e9ecef"
             }
         }
-        Plain { objectName: "publishedOutputIdentity"; text: root.cameraSources.output.published ? qsTr("WebcamTuner output: PipeWire node %1 (%2). Synthetic test pattern only.").arg(root.cameraSources.output.nodeId).arg(root.cameraSources.output.node) : qsTr("WebcamTuner output is stopped. Starting the test registers PipeWire node webcamtuner.test."); color: "#93c5aa" }
-        Plain { text: qsTr("Processed camera output is not connected yet. No WebcamTuner /dev/video device is created by this build."); color: "#a9b4c1" }
+        Plain { objectName: "publishedOutputIdentity"; text: root.cameraSources.output.published ? qsTr("WebcamTuner output: PipeWire node %1 (%2) · %3").arg(root.cameraSources.output.nodeId).arg(root.cameraSources.output.node).arg(root.cameraSources.output.kind) : qsTr("WebcamTuner output is stopped."); color: "#93c5aa" }
+        Plain { text: qsTr("The processed stream is published in your user PipeWire session. The Zoom adapter exposes these sources through V4L2 inside Zoom; it creates no system /dev/video device and requires no administrator access."); color: "#a9b4c1" }
         Plain { text: root.sourceMessage; visible: text !== ""; color: "#edb17a" }
         Plain { text: qsTr("Camera output setup"); font.pixelSize: 22; font.bold: true }
-        Plain { text: qsTr("Compatibility test · This build publishes a moving test pattern as WebcamTuner. Your camera and background are not connected to this output yet.") }
+        Plain { text: qsTr("Publish your camera crop, background and label as WebcamTuner. Output uses one capture/compositor for the editor and other apps, and keeps running when this window closes. Stop output releases the camera.") }
+        RowLayout {
+            Button { objectName:"startProcessedOutput";text:root.outputControl&&root.outputControl.busy?qsTr("Working…"):qsTr("Start camera output");enabled:root.outputControl!==null&&!root.outputControl.busy&&!root.outputControl.published&&!!root.outputControl.configuration&&!!root.outputControl.configuration.camera;onClicked:root.outputControl.start() }
+            Button { objectName:"stopProcessedOutput";text:qsTr("Stop output");enabled:root.outputControl!==null;onClicked:root.outputControl.stop() }
+        }
+        Plain { text:root.outputControl?root.outputControl.feedback:"";color:"#93c5aa";visible:text!=="" }
+        Plain { text:qsTr("Output format: 1280 × 720, up to 30 fresh frames per second. Camera capture keeps its full negotiated resolution. The Camera tab shows the measured processing rate; a negotiated 30 fps format does not guarantee 30 distinct frames.");color:"#a9b4c1" }
+        Plain { text:qsTr("Native Zoom connection");font.pixelSize:18;font.bold:true }
+        Plain { text:qsTr("Enable the user-only adapter once so the normal Zoom launcher can find WebcamTuner. This downloads a signed adapter matching your installed PipeWire into your home directory. Restart Zoom once after enabling; no browser or kernel driver is used.") }
+        RowLayout {
+            Button { objectName:"enableZoomAdapter";text:root.outputControl&&root.outputControl.adapter.enabled?qsTr("Zoom adapter enabled"):qsTr("Enable Zoom camera adapter");enabled:root.outputControl!==null&&!root.outputControl.busy;onClicked:root.outputControl.request("setup-zoom") }
+            Button { text:qsTr("Use normal Zoom launcher");enabled:root.outputControl!==null&&!root.outputControl.busy&&root.outputControl.adapter.enabled;onClicked:root.outputControl.request("disable-zoom") }
+        }
+        Plain { text:root.outputControl&&root.outputControl.adapter.restartRequired?qsTr("Zoom is already running without the adapter. Quit Zoom completely and reopen it, or use Restart Zoom below."):root.outputControl&&root.outputControl.adapter.adapterLoaded?qsTr("The running Zoom process has the camera adapter loaded."):qsTr("Start camera output, then open Zoom and select WebcamTuner in its camera menu.");color:"#a9b4c1" }
+        Button { objectName:"restartNativeZoom";text:qsTr("Restart Zoom to connect camera");enabled:root.outputControl!==null&&root.outputControl.adapter.enabled&&!controller.running;onClicked:restartZoomDialog.open() }
+        Plain { text: qsTr("Diagnostic test pattern"); font.pixelSize:18;font.bold:true }
+        Plain { text: qsTr("This separate moving test pattern helps check transport without using a physical camera. Stop processed output before starting the diagnostic source.") }
         Plain { text: qsTr("The test runs in your user session without administrator access. Closing this window leaves it running. Stop it here; it also stops automatically after 30 minutes."); color: "#a9b4c1" }
         RowLayout {
             Button { objectName: "startTestOutput"; text: controller.running ? qsTr("Working…") : qsTr("Start test camera"); enabled: !controller.running && !root.state.published; onClicked: root.request("start-test") }
@@ -203,5 +221,15 @@ Item {
         }
         Button { text: qsTr("Show diagnostics"); enabled: !controller.running; onClicked: root.request("diagnostics") }
         Plain { text: root.diagnostics; visible: text.length > 0; font.pixelSize: 12 }
+    }
+    Dialog {
+        id:restartZoomDialog
+        title:qsTr("Restart Zoom?")
+        modal:true
+        anchors.centerIn:parent
+        width:Math.min(root.width-30,440)
+        standardButtons:Dialog.Ok|Dialog.Cancel
+        contentItem:Text {text:qsTr("This closes Zoom windows and leaves any active meeting. Restart only when you are ready to reconnect.");textFormat:Text.PlainText;wrapMode:Text.WordWrap;color:"#e9ecef"}
+        onAccepted:root.openApp("zoom",true)
     }
 }
