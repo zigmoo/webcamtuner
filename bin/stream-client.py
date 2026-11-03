@@ -4,6 +4,7 @@ import argparse
 import json
 import socket
 import sys
+sys.dont_write_bytecode = True
 import threading
 from camera_stream import MAX_COMMAND, command, connect
 
