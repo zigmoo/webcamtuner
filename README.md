@@ -123,3 +123,8 @@ Use in other apps is a disclosure section, folded by default. Its heading and cu
 ## Concurrent camera use
 
 The persistent user-session producer allows independent consumers without capturing the physical camera twice. Native Zoom rendering and two independent synthetic transport readers have passed. Actual Teams/Zoom concurrency and the Meet/Chat acceptance matrix remain open. Do not infer app compatibility from a source merely appearing in a menu.
+
+
+## Shared physical capture
+
+Physical capture now uses the session PipeWire camera node matched by api.v4l2.path and object.serial, instead of opening /dev/video exclusively. The selected native resolution and frame rate are retained. MJPEG modes explicitly negotiate image/jpeg and decode through jpegdec; raw YUYV/NV12 modes retain their native format. No fallback silently grabs the device exclusively. Missing camera or failed negotiation returns an error. Setup verifies/prepares jpegdec along with existing signed media components. The compositor reads bounded latest frames and propagates capture errors. Starting through Setup or IPC also requests preview while the editor is open. Composite output continues independently when the editor is hidden. Consumer-specific compatibility still requires an actual camera-menu and received-frame check.

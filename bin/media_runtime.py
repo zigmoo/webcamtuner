@@ -8,7 +8,7 @@ import tempfile
 import uuid
 from camera_adapter import data_root, download
 
-ELEMENTS = ('appsrc', 'appsink', 'videoconvert', 'pipewiresrc', 'pipewiresink', 'v4l2src')
+ELEMENTS = ('appsrc', 'appsink', 'videoconvert', 'pipewiresrc', 'pipewiresink', 'v4l2src', 'jpegdec')
 PLUGINS = {
     'appsrc': ('gst-plugins-base-libs', 'gst-plugins-base-libs', 'libgstapp.so'),
     'appsink': ('gst-plugins-base-libs', 'gst-plugins-base-libs', 'libgstapp.so'),
@@ -16,6 +16,7 @@ PLUGINS = {
     'pipewiresrc': ('gst-plugin-pipewire', 'libpipewire', 'libgstpipewire.so'),
     'pipewiresink': ('gst-plugin-pipewire', 'libpipewire', 'libgstpipewire.so'),
     'v4l2src': ('gst-plugins-good', 'gst-plugins-base-libs', 'libgstvideo4linux2.so'),
+    'jpegdec': ('gst-plugins-good', 'gst-plugins-base-libs', 'libgstjpeg.so'),
 }
 
 
@@ -34,7 +35,7 @@ def probe():
 gi.require_version('Gst','1.0')
 from gi.repository import Gst
 Gst.init(None)
-names='appsrc appsink videoconvert pipewiresrc pipewiresink v4l2src'.split()
+names='appsrc appsink videoconvert pipewiresrc pipewiresink v4l2src jpegdec'.split()
 print(json.dumps({'missing':[n for n in names if Gst.ElementFactory.make(n) is None]}))'''
     result = subprocess.run(['python3', '-c', code], env=environment(), capture_output=True, text=True, timeout=15)
     if result.returncode:
@@ -109,7 +110,7 @@ def prepare(progress):
     # Verify the candidate independently before switching the user-local plugin path.
     env = dict(environment(), GST_PLUGIN_PATH_1_0=str(target))
     if (target / 'lib').is_dir():env['LD_LIBRARY_PATH']=str(target / 'lib')+(os.pathsep+env['LD_LIBRARY_PATH'] if env.get('LD_LIBRARY_PATH') else '')
-    checked = subprocess.run(['python3', '-c', "import gi;gi.require_version('Gst','1.0');from gi.repository import Gst;Gst.init(None);assert all(Gst.ElementFactory.make(n) is not None for n in 'appsrc appsink videoconvert pipewiresrc pipewiresink v4l2src'.split())"], env=env, capture_output=True, timeout=15)
+    checked = subprocess.run(['python3', '-c', "import gi;gi.require_version('Gst','1.0');from gi.repository import Gst;Gst.init(None);assert all(Gst.ElementFactory.make(n) is not None for n in 'appsrc appsink videoconvert pipewiresrc pipewiresink v4l2src jpegdec'.split())"], env=env, capture_output=True, timeout=15)
     if checked.returncode:
         raise RuntimeError('Prepared video components failed validation. The previous runtime is unchanged.')
     (target / 'packages.json').write_text(json.dumps(provenance))

@@ -620,7 +620,7 @@ Rectangle {
     Connections {
         target:root.outputControl
         ignoreUnknownSignals:true
-        function onStarting(){root.resumeOutputPreview=root.resumeOutputPreview||root.previewOn;root.autostartRequested=false;root.previewOn=false}
+        function onStarting(){root.resumeOutputPreview=root.resumeOutputPreview||root.panelOpen;root.autostartRequested=false;root.previewOn=false}
         function onStarted(){if(root.resumeOutputPreview&&root.panelOpen)root.previewOn=true}
         function onStopped(){root.resumeOutputPreview=false;if(root.publishing||root.previewOn)root.previewOn=false}
         function onCheckedChanged(){root.maybeAutostart()}

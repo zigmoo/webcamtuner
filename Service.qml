@@ -24,12 +24,16 @@ Scope {
         function backgrounds(): void { panel.openBackgrounds() }
         function camera(): void { panel.openCamera() }
         function test(): void { panel.openTest() }
-        function outputStart(): void { panel.editor.outputControl.start() }
+        function outputStart(): void { panel.editor.startCamera() }
         function outputStop(): void { panel.editor.outputControl.stop() }
         function preview(enabled: bool): bool {
             if(enabled && (!panel.editor.cameraChoiceReady || panel.editor.cameraIndex()<0 || panel.editor.sourceKind!=="local" || (panel.editor.backgroundMode==="image"&&!panel.editor.imageReady)))return false
-            panel.editor.autostartRequested=false
-            panel.editor.previewOn=enabled
+            if (enabled) panel.editor.startCamera()
+            else {
+                panel.editor.autostartRequested=false
+                panel.editor.resumeOutputPreview=false
+                panel.editor.previewOn=false
+            }
             return true
         }
         function toggle(): void { root.toggle() }

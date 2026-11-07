@@ -19,6 +19,7 @@ shutil.copytree(root / "assets", target / "assets", dirs_exist_ok=True)
 (target / "dist").mkdir(exist_ok=True)
 shutil.copy2(root / "bin" / "webcamtuner", target / "bin" / "webcamtuner")
 shutil.copy2(root / "bin" / "process_preview.py", target / "bin" / "process_preview.py")
+shutil.copy2(root / "bin" / "camera_input.py", target / "bin" / "camera_input.py")
 for helper in ("output-control.py", "synthetic-camera.py", "browser-control.py", "background-library.py", "setup-gpu", "runtime-control.py", "snapshot_files.py", "camera_stream.py", "camera_adapter.py", "stream-client.py", "zoom-camera.py", "readback-camera.py", "controller_runtime.py", "controller-launch.py", "first-run.py", "media_runtime.py", "capture_modes.py"):
     shutil.copy2(root / "bin" / helper, target / "bin" / helper)
 shutil.copy2(root / "bin" / "preview-python", target / "bin" / "preview-python")

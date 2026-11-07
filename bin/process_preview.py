@@ -29,6 +29,7 @@ ort.disable_telemetry_events()
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from capture_modes import modes as device_modes
+from camera_input import SharedCameraInput
 _snapshot_spec = importlib.util.spec_from_file_location("webcamtuner_snapshots", Path(__file__).with_name("snapshot_files.py"))
 snapshot_files = importlib.util.module_from_spec(_snapshot_spec)
 _snapshot_spec.loader.exec_module(snapshot_files)
@@ -369,25 +370,16 @@ def save_processed_snapshot(frame, matte, settings, background):
 
 
 class CameraCapture:
-    """One latest-frame reader; only its own thread releases the V4L2 handle."""
+    """One latest-frame reader of the shared PipeWire camera."""
     def __init__(self, camera):
         selected = choose_capture_mode(device_modes(camera))
-        self.capture = cv2.VideoCapture(camera, cv2.CAP_V4L2)
+        self.capture = SharedCameraInput(camera, selected)
         self.condition = threading.Condition()
         self.stopping = threading.Event()
         self.frame, self.sequence, self.error = None, 0, None
         self.reader = None
         try:
-            self.capture.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*selected['fourcc']))
-            self.capture.set(cv2.CAP_PROP_FRAME_WIDTH, selected['width'])
-            self.capture.set(cv2.CAP_PROP_FRAME_HEIGHT, selected['height'])
-            self.capture.set(cv2.CAP_PROP_FPS, min(selected['fps'], 30))
-            self.capture.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-            if not self.capture.isOpened():
-                raise RuntimeError('Cannot open this camera. Check its privacy switch or whether another app is using it.')
-            if (int(self.capture.get(cv2.CAP_PROP_FRAME_WIDTH)), int(self.capture.get(cv2.CAP_PROP_FRAME_HEIGHT))) != (selected['width'], selected['height']):
-                raise RuntimeError('Camera did not accept its selected full-resolution mode')
-            self.fps = self.capture.get(cv2.CAP_PROP_FPS)
+            self.fps = self.capture.fps
             self.reader = threading.Thread(target=self.grab, daemon=True)
             self.reader.start()
             self.next(0, timeout=3)
@@ -398,15 +390,19 @@ class CameraCapture:
     def grab(self):
         try:
             while not self.stopping.is_set():
-                okay, image = self.capture.read()
+                sample = self.capture.read()
+                if sample is None:
+                    continue
+                image = np.ndarray((sample['height'], sample['width'], 3), dtype=np.uint8,
+                                   buffer=sample['data'], strides=(sample['stride'], 3, 1)).copy()
                 with self.condition:
-                    if not okay:
-                        self.error = 'Camera stopped delivering frames; check its privacy switch and connection'
-                        self.condition.notify_all()
-                        return
                     self.frame = image
                     self.sequence += 1
                     self.condition.notify_all()
+        except Exception as error:
+            with self.condition:
+                self.error = str(error)
+                self.condition.notify_all()
         finally:
             self.capture.release()
 
