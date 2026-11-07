@@ -703,7 +703,7 @@ Rectangle {
             width: editorScroll.availableWidth
             height: implicitHeight
             spacing: 14
-            LabelText { id: pageIntro; text:root.section==="setup"?qsTr("Prepare WebcamTuner and connect your output to other apps."):qsTr("Frame your camera. Choose a background. Your look saves automatically."); color: "#a9b4c1"; Layout.fillWidth: true }
+            LabelText { id: pageIntro; text:root.section==="setup"?qsTr("Prepare WebcamTuner and connect your output to other apps."):qsTr("Customize your webcam feed! Look for a new camera feed in Zoom, Teams and Google Meet called WebcamTuner."); color: "#a9b4c1"; Layout.fillWidth: true }
             RowLayout {
                 id: profileRow
                 visible:root.section!=="setup"
