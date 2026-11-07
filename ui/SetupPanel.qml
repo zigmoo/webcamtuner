@@ -226,6 +226,13 @@ Item {
         Plain { text: qsTr("In your meeting app's camera settings, look for WebcamTuner. A moving ball and timer confirm reception. Seeing the source here does not confirm that a particular app supports it.") }
         Button { objectName: "nativeZoomLauncher"; text: qsTr("Open Zoom desktop"); enabled: !controller.running; onClicked: root.openApp("zoom") }
         Plain { text: qsTr("Zoom uses the installed Linux desktop app. Open its Video settings to check its actual camera menu."); color: "#a9b4c1" }
+        Plain { text: qsTr("Google Meet in your normal Brave/Chromium browser needs PipeWire camera support. Enable it here, then fully quit and reopen that browser. The camera must also be started in WebcamTuner; a preview alone is not shared output.") }
+        Button {
+            objectName: "enableBrowserCameraSupport"
+            text: qsTr("Enable browser camera support")
+            enabled: !controller.running
+            onClicked: root.openApp("enable-browser-camera")
+        }
         Plain { text: qsTr("Optional compatible browser: these buttons open a separate Brave/Chromium profile with PipeWire camera support. Your normal browser settings stay unchanged. You may need to sign in again. Camera access still requires your permission.") }
         Flow {
             Layout.fillWidth: true

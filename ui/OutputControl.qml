@@ -18,6 +18,7 @@ Item {
     property var configuring: null
     property string activeAction: ""
     property bool stopping: false
+    readonly property bool startingCamera: startDelay.running || activeAction === "start-output"
     property var pending: []
     property var adapter: ({ready:false,enabled:false,restartRequired:false})
     property string pluginRoot: Qt.resolvedUrl("../").toString().replace(/^file:\/\//, "").replace(/\/$/, "")
@@ -50,6 +51,7 @@ Item {
     function stop() {
         if(!enabled)return
         stopped();feedback=qsTr("Stopping camera output…");startDelay.stop()
+        updateDelay.stop();update.running=false
         pending=pending.filter(function(item){return item.action!=="start-output"})
         stopping=true
         if(activeAction==="start-output")operation.running=false
@@ -67,10 +69,10 @@ Item {
         }
     }
     Timer { id:startDelay;interval:500;onTriggered:root.request("start-output",["--request",JSON.stringify(Object.assign({},root.configuration,{configurationRevision:root.configurationRevision}))]) }
-    Timer { interval:3000;repeat:true;running:root.enabled&&root.panelOpen;onTriggered:{if(!root.busy){root.request("status");root.request("zoom-status")}} }
+    Timer { interval:3000;repeat:true;running:root.enabled&&(root.panelOpen||root.published||root.startingCamera||root.stopping||root.state.serviceActive===true);onTriggered:{if(!root.busy){root.request("status");if(root.panelOpen)root.request("zoom-status")}} }
     Timer { id:updateDelay;interval:180;onTriggered:root.configure() }
     function configure() {
-        if(!enabled || !published || !configuration)return
+        if(!enabled || stopping || !published || !configuration)return
         if(update.running){updateDelay.restart();return}
         configuring=Object.assign({},configuration,{configurationRevision:configurationRevision})
         if(state.camera && state.camera!==configuration.camera)cameraFeedback=qsTr("Switching camera…")

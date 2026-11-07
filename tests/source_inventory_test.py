@@ -3,6 +3,8 @@ import importlib.util
 import struct
 import subprocess
 import unittest
+import tempfile
+import os
 from pathlib import Path
 from unittest.mock import patch
 
@@ -21,6 +23,28 @@ apps = load('apps', 'browser-control.py')
 
 
 class Sources(unittest.TestCase):
+    def test_browser_camera_support_preserves_flags_and_never_restarts_browser(self):
+        with tempfile.TemporaryDirectory(dir=os.environ['WEBCAMTUNER_TEST_ROOT']) as directory:
+            path = Path(directory) / 'brave-flags.conf'
+            path.write_text('# my flags\n--ozone-platform=wayland\n--enable-features=OtherFeature\n--disable-features=WebRtcPipeWireCamera,Unrelated\n')
+            with patch.dict(os.environ, XDG_CONFIG_HOME=directory), patch.object(apps.shutil, 'which', return_value='/usr/bin/brave'), patch.object(apps.subprocess, 'run') as run:
+                result = apps.enable_browser_camera()
+                first = path.read_text(); apps.enable_browser_camera()
+                self.assertEqual(path.read_text(), first)
+                self.assertIn('--enable-features=OtherFeature,WebRtcPipeWireCamera', first)
+                self.assertIn('--disable-features=Unrelated', first)
+                self.assertIn('--ozone-platform=wayland', first)
+                self.assertIn('# my flags', first)
+                self.assertTrue(result['restartRequired']); run.assert_not_called()
+
+    def test_browser_flag_symlink_is_preserved(self):
+        with tempfile.TemporaryDirectory(dir=os.environ['WEBCAMTUNER_TEST_ROOT']) as directory:
+            root = Path(directory); target = root / 'managed-flags'; target.write_text('--enable-features=Kept\n')
+            path = root / 'brave-flags.conf'; path.symlink_to(target)
+            with patch.dict(os.environ, XDG_CONFIG_HOME=directory), patch.object(apps.shutil, 'which', return_value='/usr/bin/brave'):
+                apps.enable_browser_camera()
+            self.assertTrue(path.is_symlink()); self.assertIn('WebRtcPipeWireCamera', target.read_text())
+
     def query(self, caps, device_caps):
         def ioctl(fd, request, data, mutate):
             self.assertEqual(request, 0x80685600)

@@ -1,3 +1,3 @@
 .pragma library
 // Generated from manifest.json by stage.py.
-var version = "0.9.3";
+var version = "0.9.4";

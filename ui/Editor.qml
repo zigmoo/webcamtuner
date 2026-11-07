@@ -29,8 +29,42 @@ Rectangle {
     property bool previewOn: false
     property bool resumeOutputPreview: false
     property var outputControl: noOutput
-    QtObject { id:noOutput;property bool checked:true;property bool published:false;property bool busy:false;property bool cameraSwitching:false;property string cameraFeedback:"";property int configurationRevision:0 }
+    QtObject {
+        id: noOutput
+        property bool checked: true
+        property bool published: false
+        property bool busy: false
+        property bool startingCamera: false
+        property bool stopping: false
+        property var state: ({})
+        property bool cameraSwitching: false
+        property string cameraFeedback: ""
+        property int configurationRevision: 0
+        function start() {}
+        function stop() {}
+    }
     readonly property bool publishing: root.outputControl.published
+    readonly property bool cameraOutputActive: publishing || outputControl.startingCamera || !!(outputControl.state && outputControl.state.serviceActive)
+    function startCamera() {
+        if (outputControl.stopping) return
+        autostartRequested = false
+        resumeOutputPreview = true
+        if (publishing) previewOn = true
+        else if (!outputControl.startingCamera && !outputControl.stopping) outputControl.start()
+    }
+    function toggleCameraPreview() {
+        autostartRequested = false
+        if (previewOn) {
+            resumeOutputPreview = false
+            previewOn = false
+        } else startCamera()
+    }
+    function stopCamera() {
+        autostartRequested = false
+        resumeOutputPreview = false
+        previewOn = false
+        if (cameraOutputActive || !outputControl.checked) outputControl.stop()
+    }
     property string section: "all"
     property var backgroundLibrary: ({directory: "", items: []})
     property bool libraryPending: false
@@ -124,7 +158,8 @@ Rectangle {
             || busy || cameraPending || mirrorPending || autostartPending || sourceKind !== "local"
             || savedCamera === "" || cameraIndex() < 0 || (backgroundMode === "image" && !imageReady)) return
         autostartRequested = false
-        previewOn = true
+        if (outputControl === noOutput) previewOn = true
+        else startCamera()
     }
 
     component LabelText: Text {
@@ -585,7 +620,7 @@ Rectangle {
     Connections {
         target:root.outputControl
         ignoreUnknownSignals:true
-        function onStarting(){root.resumeOutputPreview=root.previewOn;root.autostartRequested=false;root.previewOn=false}
+        function onStarting(){root.resumeOutputPreview=root.resumeOutputPreview||root.previewOn;root.autostartRequested=false;root.previewOn=false}
         function onStarted(){if(root.resumeOutputPreview&&root.panelOpen)root.previewOn=true}
         function onStopped(){root.resumeOutputPreview=false;if(root.publishing||root.previewOn)root.previewOn=false}
         function onCheckedChanged(){root.maybeAutostart()}
@@ -707,10 +742,28 @@ Rectangle {
                             root.selectCamera(id)
                         }
                     }
+                }
+                Flow {
+                    id: cameraControlButtons
+                    Layout.fillWidth: true
+                    spacing: 8
                     Button {
-                        text: root.previewOn ? (root.publishing?qsTr("Hide preview"):qsTr("Camera off")) : qsTr("Preview camera")
+                        objectName: "startCameraButton"
+                        text: root.outputControl.startingCamera ? qsTr("Starting Camera…") : qsTr("Start Camera")
+                        enabled: !root.cameraOutputActive && !root.outputControl.busy && root.processingReady && root.cameraChoiceReady && !root.cameraPending && root.savedCamera !== "" && root.sourceKind === "local" && !root.testing && (root.backgroundMode !== "image" || root.imageReady)
+                        onClicked: root.startCamera()
+                    }
+                    Button {
+                        objectName: "stopCameraButton"
+                        text: root.outputControl.stopping ? qsTr("Stopping Camera…") : qsTr("Stop Camera")
+                        enabled: !root.outputControl.stopping && (root.previewOn || root.cameraOutputActive || !root.outputControl.checked)
+                        onClicked: root.stopCamera()
+                    }
+                    Button {
+                        objectName: "previewCameraButton"
+                        text: root.previewOn ? qsTr("Hide preview") : qsTr("Preview camera")
                         enabled: root.processingReady && root.cameraChoiceReady && !root.cameraPending && root.savedCamera !== "" && root.sourceKind === "local" && !root.testing && (root.previewOn || root.backgroundMode !== "image" || root.imageReady)
-                        onClicked: { root.autostartRequested = false; root.previewOn = !root.previewOn }
+                        onClicked: root.toggleCameraPreview()
                     }
                     Button {
                         objectName: "snapshotButton"
@@ -718,6 +771,17 @@ Rectangle {
                         enabled: root.previewOn && processor.item !== null && processor.item.snapshotReady
                         onClicked: processor.item.takeSnapshot()
                     }
+                }
+                LabelText {
+                    id: cameraPowerLabel
+                    objectName: "cameraPowerStatus"
+                    Layout.fillWidth: true
+                    text: root.outputControl.stopping ? qsTr("Stopping the camera and its shared output…")
+                        : !root.outputControl.checked ? qsTr("Checking camera status…")
+                        : root.outputControl.startingCamera ? qsTr("Starting shared camera output…")
+                        : root.publishing ? qsTr("Camera is live and shared with apps. Stop Camera turns it off everywhere.")
+                        : root.previewOn ? qsTr("Preview only. Camera output is not shared with apps.")
+                        : qsTr("Camera stopped. Start Camera to make WebcamTuner available to apps.")
                 }
                 LabelText {
                     text: root.outputControl.cameraFeedback || ""
@@ -730,6 +794,7 @@ Rectangle {
                     Layout.fillWidth: true
                     Layout.preferredHeight: Math.min(width * 9 / 16, Math.max(Math.min(200, width * 9 / 16), editorScroll.availableHeight
                         - pageIntro.implicitHeight - profileRow.implicitHeight - cameraSelectorRow.implicitHeight
+                        - cameraControlButtons.implicitHeight - cameraPowerLabel.implicitHeight
                         - framingGuide.implicitHeight - cropTool.implicitHeight - mirrorControl.implicitHeight - labelControls.implicitHeight
                         - captureInfo.implicitHeight - 98))
                     Rectangle {

@@ -57,6 +57,12 @@ class StreamIPC(unittest.TestCase):
         with self.assertRaises(ValueError):
             command({'camera':'x'*17000})
 
+    def test_closed_preview_socket_is_a_handled_disconnect(self):
+        client = socket.socket(); client.close()
+        with self.assertRaises(ConnectionError):
+            self.server.send_bounded(client, {'frame': 'fixture'})
+        self.assertEqual(command({'operation': 'status'})['state'], 'starting')
+
 
 if __name__=='__main__':
     unittest.main()

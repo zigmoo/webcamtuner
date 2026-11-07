@@ -13,7 +13,55 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 URLS = {'teams': 'https://teams.microsoft.com/',
         'meet': 'https://meet.google.com/', 'chat': 'https://chat.google.com/'}
+CAMERA_FEATURE = 'WebRtcPipeWireCamera'
+
+
+def enable_browser_camera():
+    browser = shutil.which('brave') or shutil.which('chromium')
+    if not browser:
+        raise RuntimeError('Brave or Chromium is required for browser camera support.')
+    directory = Path(os.environ.get('XDG_CONFIG_HOME') or Path.home() / '.config')
+    if not directory.is_absolute():
+        raise RuntimeError('XDG_CONFIG_HOME must be an absolute path.')
+    path = directory / ('brave-flags.conf' if 'brave' in Path(browser).name else 'chromium-flags.conf')
+    target = path.resolve() if path.is_symlink() else path
+    old = target.read_text() if target.exists() else ''
+    if len(old) > 65536:
+        raise RuntimeError('Browser flags file is too large to update safely.')
+    lines, enabled = [], []
+    for line in old.splitlines():
+        stripped = line.strip()
+        if stripped.startswith('--enable-features='):
+            enabled.extend(value for value in stripped.split('=', 1)[1].split(',') if value)
+        elif stripped.startswith('--disable-features='):
+            remaining = [value for value in stripped.split('=', 1)[1].split(',')
+                         if value and value.split(':', 1)[0].split('<', 1)[0] != CAMERA_FEATURE]
+            if remaining:
+                lines.append('--disable-features=' + ','.join(remaining))
+        else:
+            lines.append(line)
+    enabled = [value for value in enabled if value.split(':', 1)[0].split('<', 1)[0] != CAMERA_FEATURE]
+    enabled.append(CAMERA_FEATURE)
+    lines.append('--enable-features=' + ','.join(dict.fromkeys(enabled)))
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temporary = target.with_name('.' + target.name + '.' + uuid.uuid4().hex)
+    try:
+        with temporary.open('x') as output:
+            temporary.chmod(target.stat().st_mode & 0o777 if target.exists() else 0o600)
+            output.write('\n'.join(lines) + '\n')
+            output.flush(); os.fsync(output.fileno())
+        temporary.replace(target)
+    finally:
+        temporary.unlink(missing_ok=True)
+    if CAMERA_FEATURE not in target.read_text():
+        raise RuntimeError('Browser camera support could not be confirmed in the saved flags.')
+    return {'message': 'PipeWire camera support saved. Fully quit and reopen your normal browser before using Meet. Existing browser windows and site permissions were not changed.',
+            'browser': Path(browser).name, 'flagsFile': str(path), 'restartRequired': True}
+
+
 def launch(app, restart=False):
+    if app == 'enable-browser-camera':
+        return enable_browser_camera()
     if app == 'zoom':
         zoom = shutil.which('zoom')
         if not zoom:
@@ -46,7 +94,7 @@ def launch(app, restart=False):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('app', choices=['zoom', *URLS])
+    parser.add_argument('app', choices=['zoom', 'enable-browser-camera', *URLS])
     parser.add_argument('--restart', action='store_true')
     args = parser.parse_args()
     try:

@@ -193,7 +193,11 @@ class ControlServer:
         while payload and not self.closed:
             if time.monotonic() >= deadline:
                 raise TimeoutError('Preview client stopped reading frames.')
-            if not select.select([], [connection], [], .1)[1]:
+            try:
+                writable = select.select([], [connection], [], .1)[1]
+            except (ValueError, OSError) as error:
+                raise ConnectionError('Preview client disconnected.') from error
+            if not writable:
                 continue
             try:
                 written = connection.send(payload[:65536], socket.MSG_DONTWAIT)
