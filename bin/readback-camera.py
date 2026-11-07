@@ -29,7 +29,8 @@ def main():
         library=library_path()
         if not library.is_file():raise RuntimeError('Enable the user-only Zoom camera adapter in Setup first.')
         if not args.loaded:
-            environment=dict(os.environ,LD_PRELOAD=str(library),PIPEWIRE_V4L2_TARGET=serial)
+            preload=str(library)+(os.pathsep+os.environ['LD_PRELOAD'] if os.environ.get('LD_PRELOAD') else '')
+            environment=dict(os.environ,LD_PRELOAD=preload,PIPEWIRE_V4L2_TARGET=serial)
             os.execve(sys.executable,[sys.executable,str(Path(__file__).resolve()),*sys.argv[1:],'--loaded'],environment)
         if os.environ.get('PIPEWIRE_V4L2_TARGET')!=serial or 'libpw-v4l2.so' not in Path('/proc/self/maps').read_text():
             raise RuntimeError('V4L2 adapter is not active; refusing to open a physical camera.')

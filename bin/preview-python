@@ -26,4 +26,13 @@ if [[ -d "$WEBCAMTUNER_MEDIA" ]]; then
   fi
 fi
 export ORT_DISABLE_TELEMETRY=1 PYTHONDONTWRITEBYTECODE=1 DO_NOT_TRACK=1
+# oneTBB can unload libtcm from a worker while its exit destructor is running.
+# Keep a loader reference for this helper process; preserve any camera adapter.
+WEBCAMTUNER_TCM_LIBRARY="${WEBCAMTUNER_TCM_LIBRARY:-/usr/lib/libtcm.so.1}"
+if [[ "$WEBCAMTUNER_TCM_LIBRARY" = /* && -f "$WEBCAMTUNER_TCM_LIBRARY" ]]; then
+  case ":${LD_PRELOAD:-}:" in
+    *:"$WEBCAMTUNER_TCM_LIBRARY":*) ;;
+    *) export LD_PRELOAD="$WEBCAMTUNER_TCM_LIBRARY${LD_PRELOAD:+:$LD_PRELOAD}" ;;
+  esac
+fi
 exec "$WEBCAMTUNER_PYTHON" "$@"

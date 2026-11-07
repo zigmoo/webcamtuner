@@ -377,6 +377,7 @@ class CameraCapture:
         self.condition = threading.Condition()
         self.stopping = threading.Event()
         self.frame, self.sequence, self.error = None, 0, None
+        self.last_frame_at = time.monotonic()
         self.reader = None
         try:
             self.fps = self.capture.fps
@@ -398,6 +399,7 @@ class CameraCapture:
                 with self.condition:
                     self.frame = image
                     self.sequence += 1
+                    self.last_frame_at = time.monotonic()
                     self.condition.notify_all()
         except Exception as error:
             with self.condition:
@@ -406,10 +408,11 @@ class CameraCapture:
         finally:
             self.capture.release()
 
-    def next(self, previous, timeout=1):
+    def next(self, previous, timeout=3):
         with self.condition:
             if not self.condition.wait_for(lambda: self.sequence != previous or self.error or self.stopping.is_set(), timeout):
-                raise RuntimeError('Camera stopped delivering fresh frames')
+                age = time.monotonic() - self.last_frame_at
+                raise RuntimeError(f'Camera stopped delivering fresh frames (waited {timeout:g}s; last frame {age:.1f}s ago)')
             if self.error:
                 raise RuntimeError(self.error)
             if self.stopping.is_set():
