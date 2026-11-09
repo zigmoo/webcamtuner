@@ -32,7 +32,7 @@ ShellRoot {
  property var oldPid:0
  function expect(ok,msg){if(!ok){console.log("FAIL: "+msg);Qt.exit(1)}}
  Timer {interval:100;running:true;repeat:true;onTriggered:{
-  if(phase===0&&p.connected){expect(p.measurement.nodeSerial==="100","initial source confirmed");oldPid=p.consumerPid;p.targetSerial="200";phase=1}
+  if(phase===0&&p.connected){expect(p.measurement.nodeSerial==="100","initial source confirmed");expect(test.findChild(p,"consumerConnection").text.indexOf(String(p.consumerPid))>=0,"consumer identifier is complete, not rounded");oldPid=p.consumerPid;p.targetSerial="200";phase=1}
   else if(phase===1&&p.connected&&p.measurement.nodeSerial==="200"){
    expect(p.consumerPid!==oldPid,"stuck previous process was replaced");oldPid=p.consumerPid;p.active=false;p.active=true;phase=2
   }

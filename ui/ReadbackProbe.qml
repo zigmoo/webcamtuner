@@ -72,7 +72,7 @@ Rectangle {
         id:content
         x:12;y:12;width:root.width-24;spacing:8
         Text {text:root.backend==="pipewire"?qsTr("PipeWire output · independent readback"):qsTr("V4L2 adapter output · independent readback");textFormat:Text.PlainText;color:"#e9ecef";font.bold:true;wrapMode:Text.WordWrap;Layout.fillWidth:true}
-        Text {objectName:"consumerConnection";text:root.connected?qsTr("Connected · consumer %1 · source %2").arg(root.consumerPid).arg(root.measurement.nodeSerial||root.targetSerial):root.connectionState==="connecting"?qsTr("Connecting…"):root.connectionState==="reconnecting"?qsTr("Reconnecting…"):qsTr("Disconnected");textFormat:Text.PlainText;color:root.connected?"#93c5aa":"#edb17a";wrapMode:Text.WordWrap;Layout.fillWidth:true}
+        Text {objectName:"consumerConnection";text:root.connected?qsTr("Connected · consumer %1 · source %2").arg(String(root.consumerPid)).arg(String(root.measurement.nodeSerial||root.targetSerial)):root.connectionState==="connecting"?qsTr("Connecting…"):root.connectionState==="reconnecting"?qsTr("Reconnecting…"):qsTr("Disconnected");textFormat:Text.PlainText;color:root.connected?"#93c5aa":"#edb17a";wrapMode:Text.WordWrap;Layout.fillWidth:true}
         Rectangle {
             Layout.fillWidth:true;Layout.preferredHeight:Math.min(240,width*9/16);color:"#080b10";clip:true
             Image {objectName:"consumerFrame";anchors.fill:parent;source:root.frame;fillMode:Image.PreserveAspectFit;cache:false;asynchronous:true;retainWhileLoading:true}

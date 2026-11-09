@@ -641,7 +641,7 @@ Rectangle {
     }
     Loader {
         id: processor
-        active: root.previewOn && root.panelOpen && root.sourceKind === "local" && !root.testing
+        active: root.previewOn && root.panelOpen && (root.section === "camera" || root.section === "all") && root.sourceKind === "local" && !root.testing
         source: Qt.resolvedUrl("ProcessedPreview.qml")
         onLoaded: {
             item.sharedOutput = Qt.binding(function() {return root.publishing})
@@ -772,7 +772,7 @@ Rectangle {
                     }
                     Button {
                         objectName: "previewCameraButton"
-                        text: root.previewOn ? qsTr("Hide preview") : qsTr("Preview camera")
+                        text: root.previewOn ? qsTr("Hide preview") : root.publishing ? qsTr("Show preview") : qsTr("Preview camera")
                         enabled: root.processingReady && root.cameraChoiceReady && !root.cameraPending && root.savedCamera !== "" && root.sourceKind === "local" && !root.testing && (root.previewOn || root.backgroundMode !== "image" || root.imageReady)
                         onClicked: root.toggleCameraPreview()
                     }
@@ -827,14 +827,14 @@ Rectangle {
                         autoTransform: true
                         sourceSize.width: 1280
                         sourceSize.height: 720
-                        visible: root.backgroundMode === "image" && !root.previewOn
+                        visible: root.backgroundMode === "image" && !root.previewOn && !root.publishing
                     }
                     Item {
                         anchors.fill: parent
                         transform: Translate { x: root.foreground.x * stage.width; y: root.foreground.y * stage.height }
                     Item {
                         id: source
-                        visible: !root.previewOn || root.testing
+                        visible: (!root.previewOn || root.testing) && !root.publishing
                         transform: Scale { origin.x: stage.width / 2 - source.x; xScale: root.mirror ? -1 : 1 }
                         width: stage.width * root.zoom; height: stage.height * root.zoom
                         x: stage.width / 2 - root.centerX * width
@@ -866,8 +866,16 @@ Rectangle {
                     FpsIndicator {id:fpsBadge;active:root.previewOn;anchors.right:parent.right;anchors.top:parent.top;anchors.margins:10}
                     BackendIndicator {visible:root.previewOn;provider:root.captureFormat.provider||"";anchors.left:parent.left;anchors.top:parent.top;anchors.margins:10}
                     LabelText {
+                        objectName:"hiddenPreviewNotice"
+                        anchors.centerIn:parent
+                        width:parent.width-24
+                        horizontalAlignment:Text.AlignHCenter
+                        visible:root.publishing&&!root.previewOn
+                        text:qsTr("Preview hidden. Camera output is still live.")
+                    }
+                    LabelText {
                         anchors.left: parent.left; anchors.top: parent.top; anchors.margins: 12
-                        visible:!root.previewOn && stage.width>=380
+                        visible:!root.previewOn && !root.publishing && stage.width>=380
                         text: root.previewOn ? (processor.item && processor.item.frameUrl !== "" ? qsTr("PROCESSED CAMERA PREVIEW") : qsTr("STARTING CAMERA…")) : qsTr("FRAMING TEST CARD · camera off")
                         font.pixelSize: 10; font.bold: true
                     }
@@ -896,6 +904,7 @@ Rectangle {
                     }
                     EditablePreviewLabel {
                         id:interactiveLabel
+                        visible:root.previewOn||!root.publishing
                         anchors.fill:parent
                         z:2
                         overlay:root.backgroundMode==="image"?root.backgroundLabelOverlay:({enabled:false})

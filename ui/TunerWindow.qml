@@ -51,7 +51,7 @@ FloatingWindow {
         tabs.currentIndex = 2
     }
     function openCamera() { openEditor(); tabs.currentIndex=0 }
-    function openTest() { openEditor();editor.autostartRequested=false;editor.previewOn=false;tabs.currentIndex=3 }
+    function openTest() { openEditor();editor.autostartRequested=false;if(!editor.publishing)editor.previewOn=false;tabs.currentIndex=3 }
     function openBackgrounds() {
         openEditor()
         editor.autostartRequested = false
@@ -138,6 +138,7 @@ FloatingWindow {
     }
     TestPanel {
         id:outputTests
+        enabled:!editor.testing
         anchors.top:tabs.bottom;anchors.left:parent.left;anchors.right:parent.right;anchors.bottom:parent.bottom
         visible:!window.collapsed&&tabs.currentIndex===3
         panelOpen:window.visible
