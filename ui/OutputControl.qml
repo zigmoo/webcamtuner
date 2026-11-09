@@ -45,8 +45,9 @@ Item {
         operation.running=true
     }
     function start() {
-        if(!enabled || !readyToStart || busy || !configuration || !configuration.camera)return
+        if(!enabled || !readyToStart || busy || !configuration || !configuration.camera)return false
         starting();feedback=qsTr("Starting your composed camera output…");startDelay.restart()
+        return true
     }
     function stop() {
         if(!enabled)return

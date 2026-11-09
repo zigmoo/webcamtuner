@@ -32,6 +32,7 @@ Rectangle {
     QtObject {
         id: noOutput
         property bool checked: true
+        property bool readyToStart: true
         property bool published: false
         property bool busy: false
         property bool startingCamera: false
@@ -46,11 +47,17 @@ Rectangle {
     readonly property bool publishing: root.outputControl.published
     readonly property bool cameraOutputActive: publishing || outputControl.startingCamera || !!(outputControl.state && outputControl.state.serviceActive)
     function startCamera() {
-        if (outputControl.stopping) return
+        if (outputControl.stopping) return false
+        if (publishing) {
+            autostartRequested = false
+            resumeOutputPreview = true
+            previewOn = true
+            return true
+        }
+        if (!outputControl.startingCamera && outputControl.start() === false) return false
         autostartRequested = false
         resumeOutputPreview = true
-        if (publishing) previewOn = true
-        else if (!outputControl.startingCamera && !outputControl.stopping) outputControl.start()
+        return true
     }
     function toggleCameraPreview() {
         autostartRequested = false
@@ -149,16 +156,17 @@ Rectangle {
         else { resetScroll(); maybeAutostart(); if (section === "background") refreshBackgrounds() }
     }
     onBusyChanged: maybeAutostart()
+    onProcessingReadyChanged: maybeAutostart()
     onImageReadyChanged: { maybeAutostart(); if (imageReady && dirty && !automaticWritesPaused) autosave.restart() }
     function maybeAutostart() {
         if(!processingReady)return
         if (!testing && !root.outputControl.checked) return
-        if (root.outputControl.state && root.outputControl.state.processed && !root.publishing) return
+        if (root.outputControl.busy || root.outputControl.stopping || root.outputControl.startingCamera) return
+        if (root.outputControl.state && root.outputControl.state.serviceActive && !root.publishing) return
         if (!autostartRequested || !autostartCamera || !panelOpen || !document || !cameraChoiceReady
             || busy || cameraPending || mirrorPending || autostartPending || sourceKind !== "local"
             || savedCamera === "" || cameraIndex() < 0 || (backgroundMode === "image" && !imageReady)) return
-        autostartRequested = false
-        if (outputControl === noOutput) previewOn = true
+        if (outputControl === noOutput) { autostartRequested = false; previewOn = true }
         else startCamera()
     }
 
@@ -620,10 +628,13 @@ Rectangle {
     Connections {
         target:root.outputControl
         ignoreUnknownSignals:true
-        function onStarting(){root.resumeOutputPreview=root.resumeOutputPreview||root.panelOpen;root.autostartRequested=false;root.previewOn=false}
-        function onStarted(){if(root.resumeOutputPreview&&root.panelOpen)root.previewOn=true}
+        function onStarting(){root.resumeOutputPreview=root.resumeOutputPreview||root.panelOpen;root.autostartRequested=false;root.previewOn=false;root.message=qsTr("Starting saved camera…")}
+        function onStarted(){root.message=qsTr("Camera is live and shared with apps.");if(root.resumeOutputPreview&&root.panelOpen)root.previewOn=true}
         function onStopped(){root.resumeOutputPreview=false;if(root.publishing||root.previewOn)root.previewOn=false}
         function onCheckedChanged(){root.maybeAutostart()}
+        function onReadyToStartChanged(){root.maybeAutostart()}
+        function onBusyChanged(){root.maybeAutostart()}
+        function onStateChanged(){root.maybeAutostart()}
         function onPublishedChanged(){root.maybeAutostart()}
         function onFailed(message){root.message=message}
         function onCameraRejected(camera){root.selectCamera(camera)}
