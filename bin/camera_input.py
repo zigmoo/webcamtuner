@@ -35,9 +35,9 @@ class SharedCameraInput:
         Gst.init(None)
         jpeg = mode.get('fourcc') == 'MJPG'
         self.pipeline = Gst.parse_launch(
-            f'pipewiresrc always-copy=true min-buffers=4 max-buffers=8 target-object={serial} ! '
+            f'pipewiresrc use-bufferpool=false always-copy=true min-buffers=4 max-buffers=8 target-object={serial} ! '
             'capsfilter name=source_mode ! ' + ('jpegdec ! ' if jpeg else '') + 'videoconvert ! '
-            'video/x-raw,format=BGR ! appsink name=frames sync=false max-buffers=1 drop=true')
+            'video/x-raw,format=BGR ! appsink name=frames sync=false enable-last-sample=false max-buffers=1 drop=true')
         from fractions import Fraction
         rate = Fraction(self.fps).limit_denominator(1001)
         dimensions = f'width={self.width},height={self.height},framerate={rate.numerator}/{rate.denominator}'
