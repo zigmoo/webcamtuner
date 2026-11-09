@@ -99,7 +99,7 @@ class BackgroundTests(unittest.TestCase):
         np.testing.assert_array_equal(output[25:35, 30:50], frame[25:35, 30:50])
         self.assertNotEqual(int(output[0, 0, 0]), int(frame[0, 0, 0]))
 
-    def test_mirror_reflects_person_and_mask_without_reflecting_the_background(self):
+    def test_mirror_reflects_the_finished_scene(self):
         frame = np.zeros((20, 30, 3), dtype=np.uint8)
         frame[:, :10] = (40, 80, 200)
         mask = np.zeros((20, 30, 1), dtype=np.float32)
@@ -107,12 +107,13 @@ class BackgroundTests(unittest.TestCase):
         background = np.zeros_like(frame)
         background[:, :15] = (200, 50, 20)
         background[:, 15:] = (70, 80, 90)
-        mirrored, alpha = preview.orient_camera(frame, mask, True)
-        output = preview.composite(mirrored, alpha, "image", background)
+        scene = preview.composite(frame, mask, "image", background)
+        settings = {'mirror': True, 'background': {'mode': 'image'}}
+        output = preview.finish_composite(scene, settings)
+        np.testing.assert_array_equal(output, scene[:, ::-1])
         np.testing.assert_array_equal(output[5, 25], (40, 80, 200))
-        np.testing.assert_array_equal(output[5, 0], (200, 50, 20))
-        untouched, _ = preview.orient_camera(frame, mask, False)
-        np.testing.assert_array_equal(untouched, frame)
+        np.testing.assert_array_equal(output[5, 0], (70, 80, 90))
+        np.testing.assert_array_equal(preview.finish_composite(scene, {**settings, 'mirror': False}), scene)
 
     def test_image_paths_with_spaces_hashes_and_exif_orientation(self):
         scratch = os.environ["WEBCAMTUNER_TEST_ROOT"]

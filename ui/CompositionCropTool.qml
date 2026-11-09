@@ -90,17 +90,23 @@ ColumnLayout {
                         Layout.fillWidth: true
                         Layout.preferredHeight: parent.parent.columns === 1 ? 100 : width * 9 / 16
                         clip:true
-                        Image {
-                            id:croppedBackdrop
-                            visible:root.compositionSource.toString()==="" && root.backgroundAvailable
-                            source:root.backgroundSource
-                            asynchronous:true;autoTransform:true
-                            property real cover:implicitWidth>0&&implicitHeight>0?Math.max(parent.width/implicitWidth,parent.height/implicitHeight)*root.backgroundCrop.zoom:1
-                            width:implicitWidth*cover;height:implicitHeight*cover
-                            x:parent.width/2-root.backgroundCrop.centerX*width;y:parent.height/2-root.backgroundCrop.centerY*height
+                        Item {
+                            id: compositionLayer
+                            objectName: "cropCompositionLayer"
+                            anchors.fill: parent
+                            transform: Scale { origin.x: compositionLayer.width / 2; xScale: root.mirror ? -1 : 1 }
+                            Image {
+                                id:croppedBackdrop
+                                visible:root.compositionSource.toString()==="" && root.backgroundAvailable
+                                source:root.backgroundSource
+                                asynchronous:true;autoTransform:true
+                                property real cover:implicitWidth>0&&implicitHeight>0?Math.max(parent.width/implicitWidth,parent.height/implicitHeight)*root.backgroundCrop.zoom:1
+                                width:implicitWidth*cover;height:implicitHeight*cover
+                                x:parent.width/2-root.backgroundCrop.centerX*width;y:parent.height/2-root.backgroundCrop.centerY*height
+                            }
+                            PreviewFrame { anchors.fill:parent; source:root.compositionSource }
+                            BackgroundLabelOverlay { anchors.fill:parent; overlay:root.labelOverlay }
                         }
-                        PreviewFrame { anchors.fill:parent; source:root.compositionSource }
-                        BackgroundLabelOverlay { anchors.fill:parent; overlay:root.labelOverlay }
                     }
                 }
             }

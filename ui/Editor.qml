@@ -815,53 +815,96 @@ Rectangle {
                     width: Math.min(parent.width, parent.height * 16 / 9)
                     height: width * 9 / 16
                     color: "#0e131b"; clip: true
-                    Image {
-                        id: backgroundImage
-                        objectName: "backgroundImage"
-                        property real cover: implicitWidth>0&&implicitHeight>0 ? Math.max(stage.width/implicitWidth,stage.height/implicitHeight)*root.backgroundCrop.zoom : 1
-                        width:implicitWidth*cover; height:implicitHeight*cover
-                        x:stage.width/2-root.backgroundCrop.centerX*width; y:stage.height/2-root.backgroundCrop.centerY*height
-                        source: root.backgroundMode === "image" ? root.backgroundUrl(root.imagePath) : ""
-                        fillMode: Image.PreserveAspectFit
-                        asynchronous: true
-                        autoTransform: true
-                        sourceSize.width: 1280
-                        sourceSize.height: 720
-                        visible: root.backgroundMode === "image" && !root.previewOn && !root.publishing
-                    }
                     Item {
+                        id: compositionLayer
+                        objectName: "cameraCompositionLayer"
                         anchors.fill: parent
-                        transform: Translate { x: root.foreground.x * stage.width; y: root.foreground.y * stage.height }
-                    Item {
-                        id: source
-                        visible: (!root.previewOn || root.testing) && !root.publishing
-                        transform: Scale { origin.x: stage.width / 2 - source.x; xScale: root.mirror ? -1 : 1 }
-                        width: stage.width * root.zoom; height: stage.height * root.zoom
-                        x: stage.width / 2 - root.centerX * width
-                        y: stage.height / 2 - root.centerY * height
-                        Rectangle {
+                        transform: Scale { origin.x: compositionLayer.width / 2; xScale: root.mirror ? -1 : 1 }
+                        Image {
+                            id: backgroundImage
+                            objectName: "backgroundImage"
+                            property real cover: implicitWidth>0&&implicitHeight>0 ? Math.max(stage.width/implicitWidth,stage.height/implicitHeight)*root.backgroundCrop.zoom : 1
+                            width:implicitWidth*cover; height:implicitHeight*cover
+                            x:stage.width/2-root.backgroundCrop.centerX*width; y:stage.height/2-root.backgroundCrop.centerY*height
+                            source: root.backgroundMode === "image" ? root.backgroundUrl(root.imagePath) : ""
+                            fillMode: Image.PreserveAspectFit
+                            asynchronous: true
+                            autoTransform: true
+                            sourceSize.width: 1280
+                            sourceSize.height: 720
+                            visible: root.backgroundMode === "image" && !root.previewOn && !root.publishing
+                        }
+                        Item {
                             anchors.fill: parent
-                            color: "transparent"
+                            transform: Translate { x: root.foreground.x * stage.width; y: root.foreground.y * stage.height }
+                        Item {
+                            id: source
+                            visible: (!root.previewOn || root.testing) && !root.publishing
+                            width: stage.width * root.zoom; height: stage.height * root.zoom
+                            x: stage.width / 2 - root.centerX * width
+                            y: stage.height / 2 - root.centerY * height
                             Rectangle {
                                 anchors.fill: parent
-                                visible: root.backgroundMode !== "image" || !root.imageReady
-                                gradient: Gradient { GradientStop { position: 0; color: "#314d53" } GradientStop { position: 1; color: "#17232c" } }
-                                Repeater {
-                                    model: 9
-                                    Rectangle { required property int index; x: source.width * (index + 1) / 10; width: 1; height: source.height; color: "#52676c"; opacity: 0.35 }
+                                color: "transparent"
+                                Rectangle {
+                                    anchors.fill: parent
+                                    visible: root.backgroundMode !== "image" || !root.imageReady
+                                    gradient: Gradient { GradientStop { position: 0; color: "#314d53" } GradientStop { position: 1; color: "#17232c" } }
+                                    Repeater {
+                                        model: 9
+                                        Rectangle { required property int index; x: source.width * (index + 1) / 10; width: 1; height: source.height; color: "#52676c"; opacity: 0.35 }
+                                    }
+                                }
+                                Rectangle { x: parent.width * 0.43; y: parent.height * 0.24; width: parent.width * 0.14; height: width; radius: width / 2; color: "#b3c8c4" }
+                                Rectangle { x: parent.width * 0.30; y: parent.height * 0.53; width: parent.width * 0.40; height: parent.height * 0.65; radius: width * 0.3; color: "#88a5a3" }
+                            }
+                        }
+                        }
+                        PreviewFrame {
+                            objectName: "processedFrame"
+                            anchors.fill: parent
+                            visible: root.previewOn
+                            source: processor.item ? processor.item.frameUrl : ""
+                            onFrameDecoded: {root.previewDecoded=true;fpsBadge.frameReady()}
+                        }
+                        MouseArea {
+                            anchors.fill: parent; preventStealing: true
+                            property real startX; property real startY; property real startCX; property real startCY
+                            cursorShape: pressed ? Qt.ClosedHandCursor : Qt.OpenHandCursor
+                            onPressed: function(mouse) { startX=mouse.x;startY=mouse.y;startCX=cropTool.target==="background"?root.backgroundCrop.centerX:root.foreground.x;startCY=cropTool.target==="background"?root.backgroundCrop.centerY:root.foreground.y }
+                            onPositionChanged: function(mouse) {
+                                if(!pressed)return
+                                if(cropTool.target==="camera")root.placeForeground(startCX+(mouse.x-startX)/stage.width,startCY+(mouse.y-startY)/stage.height)
+                                else if(!root.backgroundLocked&&root.imageReady){
+                                    var ex=stage.width/(2*backgroundImage.width),ey=stage.height/(2*backgroundImage.height)
+                                    root.editBackgroundCrop({zoom:root.backgroundCrop.zoom,centerX:Math.max(ex,Math.min(1-ex,startCX-(mouse.x-startX)/backgroundImage.width)),centerY:Math.max(ey,Math.min(1-ey,startCY-(mouse.y-startY)/backgroundImage.height))})
                                 }
                             }
-                            Rectangle { x: parent.width * 0.43; y: parent.height * 0.24; width: parent.width * 0.14; height: width; radius: width / 2; color: "#b3c8c4" }
-                            Rectangle { x: parent.width * 0.30; y: parent.height * 0.53; width: parent.width * 0.40; height: parent.height * 0.65; radius: width * 0.3; color: "#88a5a3" }
+                            onWheel: function(wheel) {
+                                if (!(wheel.modifiers & Qt.ControlModifier)) {
+                                    var flick = editorScroll.contentItem
+                                    var amount = wheel.pixelDelta.y ? -wheel.pixelDelta.y : -wheel.angleDelta.y / 120 * 64
+                                    flick.contentY = Math.max(0, Math.min(flick.contentHeight - flick.height, flick.contentY + amount))
+                                    wheel.accepted = true; return
+                                }
+                                cropTool.changeZoom(cropTool.selectedCrop.zoom*(wheel.angleDelta.y>0?1.1:1/1.1)); wheel.accepted=true }
                         }
-                    }
-                    }
-                    PreviewFrame {
-                        objectName: "processedFrame"
-                        anchors.fill: parent
-                        visible: root.previewOn
-                        source: processor.item ? processor.item.frameUrl : ""
-                        onFrameDecoded: {root.previewDecoded=true;fpsBadge.frameReady()}
+                        EditablePreviewLabel {
+                            id:interactiveLabel
+                            mirrored:root.mirror
+                            visible:root.previewOn||!root.publishing
+                            anchors.fill:parent
+                            z:2
+                            overlay:root.backgroundMode==="image"?root.backgroundLabelOverlay:({enabled:false})
+                            bitmapSource:processor.item?processor.item.labelBitmapUrl:""
+                            bitmapKey:processor.item?processor.item.labelBitmapKey:""
+                            bitmapWidth:processor.item?processor.item.labelBitmapWidth:0
+                            bitmapHeight:processor.item?processor.item.labelBitmapHeight:0
+                            frameWidth:root.captureFormat.previewWidth||960
+                            frameHeight:root.captureFormat.previewHeight||540
+                            onChanged:function(patch){root.editLabel(patch)}
+                            onEditingStateChanged:function(active){root.previewLabelEditing=active}
+                        }
                     }
                     FpsIndicator {id:fpsBadge;active:root.previewOn;anchors.right:parent.right;anchors.top:parent.top;anchors.margins:10}
                     BackendIndicator {visible:root.previewOn;provider:root.captureFormat.provider||"";anchors.left:parent.left;anchors.top:parent.top;anchors.margins:10}
@@ -880,43 +923,6 @@ Rectangle {
                         font.pixelSize: 10; font.bold: true
                     }
                     LabelText { anchors.right: parent.right; anchors.bottom: parent.bottom; anchors.margins: 12; text: root.zoom.toFixed(2) + "×"; font.bold: true }
-                    MouseArea {
-                        anchors.fill: parent; preventStealing: true
-                        property real startX; property real startY; property real startCX; property real startCY
-                        cursorShape: pressed ? Qt.ClosedHandCursor : Qt.OpenHandCursor
-                        onPressed: function(mouse) { startX=mouse.x;startY=mouse.y;startCX=cropTool.target==="background"?root.backgroundCrop.centerX:root.foreground.x;startCY=cropTool.target==="background"?root.backgroundCrop.centerY:root.foreground.y }
-                        onPositionChanged: function(mouse) {
-                            if(!pressed)return
-                            if(cropTool.target==="camera")root.placeForeground(startCX+(mouse.x-startX)/stage.width,startCY+(mouse.y-startY)/stage.height)
-                            else if(!root.backgroundLocked&&root.imageReady){
-                                var ex=stage.width/(2*backgroundImage.width),ey=stage.height/(2*backgroundImage.height)
-                                root.editBackgroundCrop({zoom:root.backgroundCrop.zoom,centerX:Math.max(ex,Math.min(1-ex,startCX-(mouse.x-startX)/backgroundImage.width)),centerY:Math.max(ey,Math.min(1-ey,startCY-(mouse.y-startY)/backgroundImage.height))})
-                            }
-                        }
-                        onWheel: function(wheel) {
-                            if (!(wheel.modifiers & Qt.ControlModifier)) {
-                                var flick = editorScroll.contentItem
-                                var amount = wheel.pixelDelta.y ? -wheel.pixelDelta.y : -wheel.angleDelta.y / 120 * 64
-                                flick.contentY = Math.max(0, Math.min(flick.contentHeight - flick.height, flick.contentY + amount))
-                                wheel.accepted = true; return
-                            }
-                            cropTool.changeZoom(cropTool.selectedCrop.zoom*(wheel.angleDelta.y>0?1.1:1/1.1)); wheel.accepted=true }
-                    }
-                    EditablePreviewLabel {
-                        id:interactiveLabel
-                        visible:root.previewOn||!root.publishing
-                        anchors.fill:parent
-                        z:2
-                        overlay:root.backgroundMode==="image"?root.backgroundLabelOverlay:({enabled:false})
-                        bitmapSource:processor.item?processor.item.labelBitmapUrl:""
-                        bitmapKey:processor.item?processor.item.labelBitmapKey:""
-                        bitmapWidth:processor.item?processor.item.labelBitmapWidth:0
-                        bitmapHeight:processor.item?processor.item.labelBitmapHeight:0
-                        frameWidth:root.captureFormat.previewWidth||960
-                        frameHeight:root.captureFormat.previewHeight||540
-                        onChanged:function(patch){root.editLabel(patch)}
-                        onEditingStateChanged:function(active){root.previewLabelEditing=active}
-                    }
                 }
                 }
                 LabelControls {
@@ -955,6 +961,8 @@ Rectangle {
                     id: mirrorControl
                     objectName: "mirrorToggle"
                     text: root.mirrorPending || root.mirrorQueued ? qsTr("Mirror (saving…)") : qsTr("Mirror")
+                    ToolTip.visible: hovered
+                    ToolTip.text: qsTr("Mirror the whole composite: camera, background and label.")
                     checked: root.mirror
                     enabled: root.document !== null && !root.mirrorQueued && !root.cameraQueued && !root.autostartQueued && !root.mirrorPending && !root.cameraPending && !root.autostartPending
                     nextCheckState: function() { return checkState }

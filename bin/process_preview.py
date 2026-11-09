@@ -167,6 +167,13 @@ def apply_label_overlay(frame, overlay):
     return result
 
 
+def finish_composite(frame, settings):
+    """Render the label, then reflect the entire finished scene exactly once."""
+    if settings['background']['mode'] == 'image':
+        frame = apply_label_overlay(frame, settings['background'].get('labelOverlay'))
+    return cv2.flip(frame, 1) if settings.get('mirror', True) else frame
+
+
 def fit_cover(image: np.ndarray, width: int, height: int) -> np.ndarray:
     scale = max(width / image.shape[1], height / image.shape[0])
     sized = cv2.resize(image, (math.ceil(image.shape[1] * scale), math.ceil(image.shape[0] * scale)))
@@ -330,12 +337,6 @@ def composite(frame: np.ndarray, mask: np.ndarray, mode: str, background: np.nda
     return cv2.add(foreground, background_part, dtype=cv2.CV_8U)
 
 
-def orient_camera(frame: np.ndarray, mask: np.ndarray | None, mirror: bool):
-    if not mirror:
-        return frame, mask
-    return frame[:, ::-1].copy(), None if mask is None else mask[:, ::-1].copy()
-
-
 def emit(value: dict) -> None:
     if OUTPUT_HOOK is not None:
         OUTPUT_HOOK(value)
@@ -354,14 +355,13 @@ def save_processed_snapshot(frame, matte, settings, background):
         if matte is None:
             raise ValueError('The processed image is not ready for a snapshot.')
         alpha = align_matte(matte, w, h, settings['crop'], cw, ch)
-    full, alpha = orient_camera(full, alpha, settings.get('mirror', True))
     base = full
     placement = settings.get('foreground', {'x':0, 'y':0})
     if placement.get('x', 0) or placement.get('y', 0):
-        full, alpha = placed_foreground(frame, matte, settings['crop'], settings.get('mirror', True), placement, cw, ch)
+        full, alpha = placed_foreground(frame, matte, settings['crop'], False, placement, cw, ch)
     if mode != 'none':
         full = composite(full, alpha, mode, background, settings['background'].get('crop'), base)
-    if mode == 'image': full = apply_label_overlay(full, settings['background'].get('labelOverlay'))
+    full = finish_composite(full, settings)
     okay, encoded = cv2.imencode('.jpg', full, [cv2.IMWRITE_JPEG_QUALITY, 96])
     if not okay:
         raise ValueError('Snapshot could not be encoded.')
@@ -545,24 +545,23 @@ def run(initial: dict, frame_limit: int = 0, ui_overlay: bool = False, publish: 
                 matte_ms = (time.monotonic() - captured) * 1000
                 frame = crop_frame(frame, current["crop"], 1280 if publish else 960, 720 if publish else 540)
                 alpha = align_matte(alpha, source_width, source_height, current["crop"], frame.shape[1], frame.shape[0])
-                frame, alpha = orient_camera(frame, alpha, current.get("mirror", True))
                 base = frame
                 placement = current.get('foreground', {'x':0, 'y':0})
                 if placement.get('x', 0) or placement.get('y', 0):
-                    frame, alpha = placed_foreground(full_frame, matte, current['crop'], current.get('mirror', True), placement, frame.shape[1], frame.shape[0])
+                    frame, alpha = placed_foreground(full_frame, matte, current['crop'], False, placement, frame.shape[1], frame.shape[0])
                 frame = composite(frame, alpha, mode, background, current["background"].get("crop"), base)
             else:
                 frame = crop_frame(frame, current["crop"], 1280 if publish else 960, 720 if publish else 540)
-                frame, _ = orient_camera(frame, None, current.get("mirror", True))
                 placement = current.get('foreground', {'x':0, 'y':0})
                 if placement.get('x', 0) or placement.get('y', 0):
-                    frame, _ = placed_foreground(full_frame, None, current['crop'], current.get('mirror', True), placement, frame.shape[1], frame.shape[0])
+                    frame, _ = placed_foreground(full_frame, None, current['crop'], False, placement, frame.shape[1], frame.shape[0])
             if publisher is not None:
                 frame = fit_cover(frame, 1280, 720)
-                output_frame = apply_label_overlay(frame, current['background'].get('labelOverlay')) if mode == 'image' else frame
-                publisher.push(output_frame)
+                publisher.push(finish_composite(frame, current))
                 frame = cv2.resize(frame, (960, 540))
-            if mode == 'image' and not ui_overlay: frame = apply_label_overlay(frame, current['background'].get('labelOverlay'))
+            # The editor adds its editable label to this canonical scene, then
+            # mirrors that whole layer. Other consumers receive finished pixels.
+            if not ui_overlay: frame = finish_composite(frame, current)
             with guard:
                 snapshot = snapshots.pop() if snapshots else None
             if snapshot is not None:

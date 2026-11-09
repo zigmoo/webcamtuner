@@ -38,7 +38,7 @@ class SnapshotTests(unittest.TestCase):
         settings={'crop':{'zoom':1,'centerX':.5,'centerY':.5},'mirror':True,'foreground':{'x':.4,'y':0},'background':{'mode':'image'}}
         saved=preview.save_processed_snapshot(frame,matte,settings,background)
         with Image.open(saved['path']) as image:
-            self.assertLess(np.abs(np.array(image.getpixel((1160,360)))-[255,0,0]).max(),4)
+            self.assertLess(np.abs(np.array(image.getpixel((120,360)))-[255,0,0]).max(),4)
             self.assertLess(np.abs(np.array(image.getpixel((640,360)))-[0,255,0]).max(),4)
 
     def test_original_snapshot_and_unique_names(self):

@@ -38,6 +38,7 @@ def guard(fn):
   except Exception:errors.append(traceback.format_exc());app.quit()
  return call
 def begin():
+ editor.setProperty('mirror',False)
  click(find(editor,'cropBackground'));assert ev('cropTool.target')=='background'
  ev('cropTool.changeZoom(2)');assert ev('backgroundCrop.zoom')==2 and editor.property('zoom')==1
  click(find(editor,'cropCamera'));ev('cropTool.changeZoom(1.5)');assert editor.property('zoom')==1.5 and ev('backgroundCrop.zoom')==2

@@ -4,6 +4,7 @@ import QtQuick.Controls
 Item {
     id: root
     property var overlay: ({enabled:false,opacity:.75,text:""})
+    property bool mirrored: false
     property bool editing: false
     property string draftText: ""
     property url bitmapSource
@@ -76,6 +77,8 @@ Item {
         }
         TextField {
             id:field
+            // Editing controls stay readable while the rendered label mirrors.
+            transform: Scale { origin.x: field.width / 2; xScale: root.mirrored ? -1 : 1 }
             objectName:"previewLabelText"
             anchors.fill:parent
             visible:root.editing
