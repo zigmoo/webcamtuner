@@ -9,6 +9,7 @@ FloatingWindow {
     property alias titleBar: titlebar
     property alias bootstrap: bootstrap
     property alias bridge: bridge
+    property alias testPanel: outputTests
     property color accent: "#93c5aa"
     property bool collapsed: false
     property int expandedWidth: Math.min(780, screen ? screen.width - 80 : 780)
@@ -136,6 +137,7 @@ FloatingWindow {
         visible: !window.collapsed && tabs.currentIndex === 4
     }
     TestPanel {
+        id:outputTests
         anchors.top:tabs.bottom;anchors.left:parent.left;anchors.right:parent.right;anchors.bottom:parent.bottom
         visible:!window.collapsed&&tabs.currentIndex===3
         panelOpen:window.visible

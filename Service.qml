@@ -26,6 +26,7 @@ Scope {
         function test(): void { panel.openTest() }
         function outputStart(): void { panel.editor.startCamera() }
         function outputStop(): void { panel.editor.outputControl.stop() }
+        function consumers(): string { return JSON.stringify(panel.testPanel.consumerStatus()) }
         function preview(enabled: bool): bool {
             if(enabled && (!panel.editor.cameraChoiceReady || panel.editor.cameraIndex()<0 || panel.editor.sourceKind!=="local" || (panel.editor.backgroundMode==="image"&&!panel.editor.imageReady)))return false
             if (enabled) panel.editor.startCamera()
@@ -50,6 +51,7 @@ Scope {
             return JSON.stringify({ version: BuildInfo.version, section:panel.editor.section, opened: root.opened, collapsed: panel.collapsed, width: panel.width, height: panel.height,
                 busy: panel.editor.busy, dirty: panel.editor.dirty, message: panel.editor.message,
                 mirror: panel.editor.mirror, autostartCamera: panel.editor.autostartCamera, previewOn: panel.editor.previewOn, previewReady:panel.editor.previewReady, processingBackend:panel.editor.captureFormat.provider||"",
+                autostartRequested:panel.editor.autostartRequested,processingReady:panel.editor.processingReady,cameraChoiceReady:panel.editor.cameraChoiceReady,camera:panel.editor.savedCamera,outputReady:panel.editor.outputControl.readyToStart,outputBusy:panel.editor.outputControl.busy,
                 sharedControls: true, draftRecovery: true, autosave: true, labelEditing:panel.editor.labelEditing, labelPending:panel.editor.labelInFlight!==null || Object.keys(panel.editor.labelDrafts).length>0, saving: panel.editor.savePending, saveFailed: panel.editor.saveFailed || panel.editor.labelSaveFailed, revision: panel.editor.document ? panel.editor.document.revision : -1, broadcasting: panel.editor.publishing })
         }
     }

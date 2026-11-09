@@ -18,12 +18,15 @@ def main():
     parser.add_argument('--backend',choices=['pipewire','v4l2'],default='pipewire')
     parser.add_argument('--loaded',action='store_true')
     parser.add_argument('--frames',type=int,default=0)
+    parser.add_argument('--node-serial')
     args=parser.parse_args()
     from camera_stream import NODE
     dump=json.loads(subprocess.check_output(['pw-dump'],timeout=5))
     node=next((n for n in dump if n.get('type')=='PipeWire:Interface:Node' and n.get('info',{}).get('props',{}).get('node.name')==NODE),None)
     if node is None:raise RuntimeError('Camera output is stopped. Start camera output in Setup or Test.')
     serial=str(node['info']['props']['object.serial'])
+    if args.node_serial is not None and args.node_serial!=serial:
+        raise RuntimeError('The published camera changed. Reconnecting to its new source is required.')
     if args.backend=='v4l2':
         from camera_adapter import library_path
         library=library_path()
@@ -40,8 +43,8 @@ def main():
     import cv2
     import numpy as np
     Gst.init(None)
-    source='pipewiresrc always-copy=true min-buffers=4 max-buffers=8 target-object='+serial if args.backend=='pipewire' else 'v4l2src device=/dev/video0 io-mode=mmap'
-    pipeline=Gst.parse_launch(source+' ! video/x-raw,width=1280,height=720,framerate=30/1 ! videoconvert ! video/x-raw,format=BGR ! appsink name=frames sync=false max-buffers=1 drop=true')
+    source='pipewiresrc use-bufferpool=false always-copy=true min-buffers=4 max-buffers=8 target-object='+serial if args.backend=='pipewire' else 'v4l2src device=/dev/video0 io-mode=mmap'
+    pipeline=Gst.parse_launch(source+' ! video/x-raw,width=1280,height=720,framerate=30/1 ! videoconvert ! video/x-raw,format=BGR ! appsink name=frames sync=false enable-last-sample=false max-buffers=1 drop=true')
     sink=pipeline.get_by_name('frames')
     running=True
     def stop(*_):
