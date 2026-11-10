@@ -5,6 +5,7 @@ Item {
     id: root
     property var overlay: ({enabled:false,opacity:.75,text:""})
     property bool mirrored: false
+    property bool presentationVisible: true
     property bool editing: false
     property string draftText: ""
     property url bitmapSource
@@ -18,9 +19,11 @@ Item {
         try{return JSON.stringify(JSON.parse(bitmapKey))===JSON.stringify([overlay.text||"",frameWidth,frameHeight,overlay.fontFamily||"sans",!!overlay.bold,!!overlay.italic,overlay.fontSize||.034,!!overlay.allCaps,overlay.color||"#ffffff"])}catch(e){return false}
     }
     readonly property bool hasText: !!overlay.text || editing
+    readonly property real renderedLabelWidth: label.width
+    readonly property real renderedLabelHeight: label.height
     signal changed(var patch)
     signal editingStateChanged(bool active)
-    visible: !!overlay.enabled && hasText
+    visible: presentationVisible && !!overlay.enabled && hasText
     function beginEditing() {
         draftText = overlay.text || ""
         editing = true
@@ -59,20 +62,11 @@ Item {
         }
         Image {anchors.fill:parent;visible:root.useBitmap;source:root.bitmapSource;fillMode:Image.PreserveAspectFit;cache:false}
         MouseArea {
-            objectName: "previewLabelDrag"
+            objectName: "previewLabelTextTarget"
             anchors.fill:parent
             enabled:!root.editing
             preventStealing:true
-            cursorShape:pressed?Qt.ClosedHandCursor:Qt.OpenHandCursor
-            property point startPointer
-            property real startX
-            property real startY
-            onPressed:function(mouse){startPointer=mapToItem(root,mouse.x,mouse.y);startX=label.x;startY=label.y}
-            onPositionChanged:function(mouse){
-                if(!pressed)return
-                var p=mapToItem(root,mouse.x,mouse.y)
-                root.changed({x:Math.max(0,Math.min(1,(startX+p.x-startPointer.x)/Math.max(1,root.width-label.width))),y:Math.max(0,Math.min(1,(startY+p.y-startPointer.y)/Math.max(1,root.height-label.height)))})
-            }
+            cursorShape: Qt.IBeamCursor
             onDoubleClicked:root.beginEditing()
         }
         TextField {

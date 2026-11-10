@@ -54,7 +54,7 @@ RowLayout {
                 Slider { objectName:"labelFontSize";Layout.fillWidth:true;from:.012;to:.15;value:root.overlay.fontSize||.034;onMoved:root.changed({fontSize:value}) }
                 Label { text:qsTr("Opacity · %1%").arg(Math.round((root.overlay.opacity===undefined?.75:root.overlay.opacity)*100)) }
                 Slider { objectName:"labelOpacity";Layout.fillWidth:true;from:0;to:1;value:root.overlay.opacity===undefined?.75:root.overlay.opacity;onMoved:root.changed({opacity:value}) }
-                Label { text:qsTr("Drag the label on the preview to position it. Double-click it to edit its text.");textFormat:Text.PlainText;wrapMode:Text.WordWrap;Layout.fillWidth:true }
+                Label { text:qsTr("Use the Label drag handle beneath the preview to move it. Double-click the label to edit its text.");textFormat:Text.PlainText;wrapMode:Text.WordWrap;Layout.fillWidth:true }
             }
         }
     }

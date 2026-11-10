@@ -88,12 +88,12 @@ def exercise():
             after = label.mapToScene(QPointF(label.width()/2,label.height()/2)).x()
             assert abs(after-before-45) < 3, (mirror,before,after)
             # Camera translation follows the same screen direction in either mode.
-            drag(layer,40,0,QPointF(layer.width()*.45,layer.height()*.35))
+            drag(find(editor,'cameraMoveDrag'),40,0)
             assert abs(ev('foreground.x')*stage.width()*sign-40) < 3
             # The source-background crop also follows the pointer under reflection.
             ev('cropTool.target="background";cropTool.changeZoom(2)')
             ev('editBackgroundCrop({zoom:2,centerX:.5,centerY:.5})')
-            drag(layer,30,0,QPointF(layer.width()*.3,layer.height()*.25))
+            drag(find(editor,'backgroundMoveDrag'),30,0)
             assert (ev('backgroundCrop.centerX')-.5)*sign < 0
             ev('cropTool.target="camera"')
             ev('interactiveLabel.beginEditing()')

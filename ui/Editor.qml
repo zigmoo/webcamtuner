@@ -806,7 +806,7 @@ Rectangle {
                     Layout.preferredHeight: Math.min(width * 9 / 16, Math.max(Math.min(200, width * 9 / 16), editorScroll.availableHeight
                         - pageIntro.implicitHeight - profileRow.implicitHeight - cameraSelectorRow.implicitHeight
                         - cameraControlButtons.implicitHeight - cameraPowerLabel.implicitHeight
-                        - framingGuide.implicitHeight - cropTool.implicitHeight - mirrorControl.implicitHeight - labelControls.implicitHeight
+                        - framingGuide.implicitHeight - cropTool.implicitHeight - mirrorControl.implicitHeight - labelControls.implicitHeight - layerMovement.implicitHeight
                         - captureInfo.implicitHeight - 98))
                     Rectangle {
                     id: stage
@@ -868,18 +868,8 @@ Rectangle {
                             onFrameDecoded: {root.previewDecoded=true;fpsBadge.frameReady()}
                         }
                         MouseArea {
-                            anchors.fill: parent; preventStealing: true
-                            property real startX; property real startY; property real startCX; property real startCY
-                            cursorShape: pressed ? Qt.ClosedHandCursor : Qt.OpenHandCursor
-                            onPressed: function(mouse) { startX=mouse.x;startY=mouse.y;startCX=cropTool.target==="background"?root.backgroundCrop.centerX:root.foreground.x;startCY=cropTool.target==="background"?root.backgroundCrop.centerY:root.foreground.y }
-                            onPositionChanged: function(mouse) {
-                                if(!pressed)return
-                                if(cropTool.target==="camera")root.placeForeground(startCX+(mouse.x-startX)/stage.width,startCY+(mouse.y-startY)/stage.height)
-                                else if(!root.backgroundLocked&&root.imageReady){
-                                    var ex=stage.width/(2*backgroundImage.width),ey=stage.height/(2*backgroundImage.height)
-                                    root.editBackgroundCrop({zoom:root.backgroundCrop.zoom,centerX:Math.max(ex,Math.min(1-ex,startCX-(mouse.x-startX)/backgroundImage.width)),centerY:Math.max(ey,Math.min(1-ey,startCY-(mouse.y-startY)/backgroundImage.height))})
-                                }
-                            }
+                            anchors.fill: parent
+                            acceptedButtons: Qt.NoButton
                             onWheel: function(wheel) {
                                 if (!(wheel.modifiers & Qt.ControlModifier)) {
                                     var flick = editorScroll.contentItem
@@ -892,7 +882,7 @@ Rectangle {
                         EditablePreviewLabel {
                             id:interactiveLabel
                             mirrored:root.mirror
-                            visible:root.previewOn||!root.publishing
+                            presentationVisible:root.previewOn||!root.publishing
                             anchors.fill:parent
                             z:2
                             overlay:root.backgroundMode==="image"?root.backgroundLabelOverlay:({enabled:false})
@@ -925,6 +915,85 @@ Rectangle {
                     LabelText { anchors.right: parent.right; anchors.bottom: parent.bottom; anchors.margins: 12; text: root.zoom.toFixed(2) + "×"; font.bold: true }
                 }
                 }
+                RowLayout {
+                    id: layerMovement
+                    objectName: "layerMovementControls"
+                    Layout.fillWidth: true
+                    spacing: 8
+                    LabelText { text: qsTr("Drag to move:") }
+                    LayerMoveHandle {
+                        objectName: "cameraMoveHandle"
+                        dragObjectName: "cameraMoveDrag"
+                        text: qsTr("Camera")
+                        accent: root.accent
+                        enabled: root.document !== null
+                        property point origin
+                        property real referenceWidth
+                        property real referenceHeight
+                        property real direction
+                        onMovementStarted: {
+                            origin = Qt.point(root.foreground.x, root.foreground.y)
+                            referenceWidth = Math.max(1, stage.width)
+                            referenceHeight = Math.max(1, stage.height)
+                            direction = root.mirror ? -1 : 1
+                        }
+                        onMovementRequested: function(dx, dy) {
+                            root.placeForeground(origin.x + direction * dx / referenceWidth, origin.y + dy / referenceHeight)
+                        }
+                    }
+                    LayerMoveHandle {
+                        objectName: "backgroundMoveHandle"
+                        dragObjectName: "backgroundMoveDrag"
+                        text: qsTr("Background")
+                        accent: root.accent
+                        enabled: root.backgroundMode === "image" && root.imageReady && !root.backgroundLocked && backgroundImage.status === Image.Ready
+                        hint: qsTr("Drag to pan the background. Zoom Background in to allow more movement.")
+                        property point origin
+                        property real referenceWidth
+                        property real referenceHeight
+                        property real edgeX
+                        property real edgeY
+                        property real direction
+                        property real startZoom
+                        onMovementStarted: {
+                            origin = Qt.point(root.backgroundCrop.centerX, root.backgroundCrop.centerY)
+                            referenceWidth = Math.max(1, backgroundImage.width)
+                            referenceHeight = Math.max(1, backgroundImage.height)
+                            edgeX = stage.width / (2 * referenceWidth)
+                            edgeY = stage.height / (2 * referenceHeight)
+                            direction = root.mirror ? -1 : 1
+                            startZoom = root.backgroundCrop.zoom
+                        }
+                        onMovementRequested: function(dx, dy) {
+                            root.editBackgroundCrop({zoom:startZoom,
+                                centerX:Math.max(edgeX, Math.min(1-edgeX, origin.x-direction*dx/referenceWidth)),
+                                centerY:Math.max(edgeY, Math.min(1-edgeY, origin.y-dy/referenceHeight))})
+                        }
+                    }
+                    LayerMoveHandle {
+                        objectName: "labelMoveHandle"
+                        dragObjectName: "previewLabelDrag"
+                        text: qsTr("Label")
+                        accent: root.accent
+                        enabled: root.backgroundMode === "image" && root.imageReady && !!root.backgroundLabelOverlay.enabled && !!root.backgroundLabelOverlay.text && !root.previewLabelEditing
+                        property point origin
+                        property real referenceWidth
+                        property real referenceHeight
+                        property real direction
+                        onMovementStarted: {
+                            origin = Qt.point(root.backgroundLabelOverlay.x === undefined ? .02 : root.backgroundLabelOverlay.x,
+                                root.backgroundLabelOverlay.y === undefined ? .96 : root.backgroundLabelOverlay.y)
+                            referenceWidth = Math.max(1, stage.width-interactiveLabel.renderedLabelWidth)
+                            referenceHeight = Math.max(1, stage.height-interactiveLabel.renderedLabelHeight)
+                            direction = root.mirror ? -1 : 1
+                        }
+                        onMovementRequested: function(dx, dy) {
+                            root.editLabel({x:Math.max(0, Math.min(1, origin.x+direction*dx/referenceWidth)),
+                                y:Math.max(0, Math.min(1, origin.y+dy/referenceHeight))})
+                        }
+                    }
+                    Item { Layout.fillWidth: true }
+                }
                 LabelControls {
                     id:labelControls
                     Layout.fillWidth:true
@@ -936,7 +1005,7 @@ Rectangle {
                 }
                 LabelText {
                     id: framingGuide
-                    text: qsTr("Drag camera image as needed.\nSelect Camera or Background below. Use the slider or Ctrl+scroll to zoom.")
+                    text: qsTr("Each drag handle moves only its named layer.\nSelect Camera or Background below to crop or zoom.")
                     color: "#a9b4c1"
                     Layout.fillWidth: true
                 }

@@ -24,10 +24,11 @@ def exercise():
   stage=editor.findChild(QObject,'cameraCompositionStage')
   for mirror in (True,False):
    editor.setProperty('mirror',mirror);ev('placeForeground(0,0)')
-   start=stage.mapToScene(QPointF(stage.width()*.5,stage.height()*.5)).toPoint()
-   end=stage.mapToScene(QPointF(stage.width()*.8,stage.height()*.7)).toPoint()
+   handle=editor.findChild(QObject,'cameraMoveDrag')
+   start=handle.mapToScene(QPointF(handle.width()*.5,handle.height()*.5)).toPoint()
+   end=start+QPointF(stage.width()*.3,stage.height()*.2).toPoint()
    QTest.mousePress(v,Qt.LeftButton,Qt.NoModifier,start);QTest.mouseMove(v,end,30);QTest.mouseRelease(v,Qt.LeftButton,Qt.NoModifier,end)
-   assert 0.28<ev('foreground.x')<0.32 and 0.18<ev('foreground.y')<0.22
+   assert 0.28<ev('foreground.x')*(-1 if mirror else 1)<0.32 and 0.18<ev('foreground.y')<0.22
    assert editor.property('zoom')==1 and editor.property('centerX')==.5
   ev('save()');stored=json.loads((scratch/'config/profiles.json').read_text());assert stored['profiles'][0]['foreground']['x']>.28
   controller('read',[]);assert ev('foreground.x')>.28
