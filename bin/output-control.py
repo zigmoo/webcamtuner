@@ -204,13 +204,14 @@ def stop_output():
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=['status', 'start-test', 'stop-test', 'diagnostics', 'inventory', 'start-output', 'stop-output', 'setup-zoom', 'disable-zoom', 'zoom-status'])
+    parser.add_argument('action', choices=['status', 'start-test', 'stop-test', 'diagnostics', 'inventory', 'start-output', 'stop-output', 'setup-zoom', 'ensure-zoom', 'disable-zoom', 'zoom-status'])
     parser.add_argument('--request')
     args = parser.parse_args()
     try:
-        if args.action in ('setup-zoom', 'disable-zoom', 'zoom-status'):
+        if args.action in ('setup-zoom', 'ensure-zoom', 'disable-zoom', 'zoom-status'):
             import camera_adapter
-            result = camera_adapter.setup() if args.action == 'setup-zoom' else camera_adapter.disable() if args.action == 'disable-zoom' else camera_adapter.status()
+            result = {'setup-zoom': camera_adapter.setup, 'ensure-zoom': camera_adapter.ensure,
+                      'disable-zoom': camera_adapter.disable, 'zoom-status': camera_adapter.status}[args.action]()
         elif args.action == 'start-output':
             result = start_output(args.request)
         elif args.action == 'stop-output':

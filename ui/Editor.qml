@@ -1170,7 +1170,7 @@ Rectangle {
                     Layout.fillWidth: true
                 }
                 LabelText {
-                    text: qsTr("1. Start output in WebcamTuner.\n2. Enable the user-only Zoom camera adapter once, then quit and reopen native Zoom.\n3. Select WebcamTuner in the app’s camera settings.\n4. Turn off the app’s background replacement and blur to use the look you set here.")
+                    text: qsTr("1. Start output in WebcamTuner. The desktop camera adapter prepares automatically.\n2. Open native Zoom, or reopen it if it was already running.\n3. Select WebcamTuner in the app’s camera settings.\n4. Turn off the app’s background replacement and blur to use the look you set here.")
                     Layout.fillWidth: true
                 }
                 LabelText {

@@ -14,7 +14,7 @@ Snapshots are kept in $XDG_DATA_HOME/webcamtuner/snapshots. The Setup checkbox M
 
 Setup lists the actual V4L2 capture devices and PipeWire video sources with their paths/node IDs and current WebcamTuner output identity. Open Zoom desktop launches the installed native Linux app; Teams/Meet/Chat retain the optional separate browser profile. App compatibility requires checking the consumer’s actual camera menu and received frames.
 
-Start Camera in Camera (also available in Setup) publishes the actual composite as WebcamTuner through your user PipeWire session. The native Zoom adapter installs a signed matching library in your home directory and scopes it to your user Zoom launcher; quit and reopen Zoom once after enabling it. Test reads the published pixels back through independent PipeWire and V4L2 consumers. Output continues when controls close; Stop Camera releases the camera and stops shared output. No sudo or kernel driver is required for this path. Native-app compatibility still requires a real check in each app, and live BRIO4K effects currently fall short of24/30fresh FPS on the development host. A separate synthetic diagnostic source remains available. Source capture resolution and measured preview FPS/backend are distinct; the preview shows live FPS and actual GPU/CPU use. Opening from any monitor's bar uses one shared floating editor, with remembered camera, saved mirror/autostart choice and draggable/resizable window controls.
+Start Camera in Camera (also available in Setup) publishes the actual composite as WebcamTuner through your user PipeWire session. The desktop camera adapter prepares its signed matching library automatically in your home directory when output starts, and refreshes after PipeWire upgrades. Native Zoom’s user launcher connects automatically when Zoom is installed; reopen an already-running Zoom process to load a newly prepared adapter. Test reads the published pixels back through independent PipeWire and V4L2 consumers. Output continues when controls close; Stop Camera releases the camera and stops shared output. No sudo or kernel driver is required for this path. Native-app compatibility still requires a real check in each app, and live BRIO4K effects currently fall short of24/30fresh FPS on the development host. A separate synthetic diagnostic source remains available. Source capture resolution and measured preview FPS/backend are distinct; the preview shows live FPS and actual GPU/CPU use. Opening from any monitor's bar uses one shared floating editor, with remembered camera, saved mirror/autostart choice and draggable/resizable window controls.
 
 ## Install
 
@@ -23,10 +23,10 @@ Add this repository in Omarchy’s plugin manager and enable WebcamTuner. The fi
 1. Click **Prepare WebcamTuner**. Progress and individual readiness checks stay visible. This builds the controller in your cache when needed and prepares OpenCV, NumPy, Pillow and ONNX Runtime in a private environment under your home directory. The bundled matting model is verified without opening a camera.
 2. Optionally click **Enable GPU acceleration** for a supported NVIDIA GPU. This prepares a separate GPU environment; CPU remains available.
 3. Choose your camera and background in Camera/Background, then click **Start Camera** or **Preview camera** in Camera.
-4. For native Zoom, click **Enable Zoom camera adapter** once, quit and reopen Zoom, then choose **WebcamTuner** in its camera settings.
+4. The desktop camera adapter prepares automatically. For native Zoom, open it (or reopen it if already running), then choose **WebcamTuner** in its camera settings.
 5. Use **Test** to inspect independent published-video readbacks. Verify reception in each meeting app separately.
 
-No build, pip, terminal or administrator commands are required after adding the plugin. Setup can check readiness again and repair the local runtime. Stop output before preparing or repairing libraries; existing profiles, backgrounds and snapshots are preserved. Preparation itself does not start capture.
+No build, pip, terminal or administrator commands are required after adding the plugin. Setup can check readiness again and repair the local runtime. Stop output before preparing or repairing the processing runtime or GPU libraries; the desktop camera adapter prepares while output stays live. existing profiles, backgrounds and snapshots are preserved. Preparation itself does not start capture.
 
 Supported desktop baseline: Omarchy/Arch with Python3, Python GObject/GStreamer desktop libraries, mise and an active user PipeWire session. Missing video plugins can be extracted from signed Arch packages matching the installed desktop into WebcamTuner’s private data directory. Packages are never installed system-wide, and package scripts are never run. A missing base desktop library or unavailable matching repository version is reported as unsupported; Setup does not silently request sudo. These paths are tested with empty WebcamTuner data/cache folders and hidden system plugins on the development host; a clean Omarchy VM release check remains pending.
 
@@ -76,7 +76,7 @@ The plugin opens a native Quickshell floating window. Drag the WebcamTuner headi
 
 Start camera output in Setup to publish one persistent user-session PipeWire camera. The Camera selector can switch the physical source without recreating the published node. A new camera must deliver a frame before the previous capture is released; an unavailable source leaves the previous source live and reports the failure. The selector remembers the confirmed saved choice.
 
-Native Zoom uses the signed, user-local PipeWire V4L2 adapter enabled in Setup. Test independently reads both PipeWire and adapter paths. No kernel module, DKMS or system video device is installed. Other consumers still require separate compatibility verification.
+Native Zoom uses the signed, user-local PipeWire V4L2 adapter prepared automatically with camera output. Test independently reads both PipeWire and adapter paths. No kernel module, DKMS or system video device is installed. Other consumers still require separate compatibility verification.
 
 ## Backgrounds
 
@@ -112,7 +112,7 @@ A fixed 42-pixel title bar keeps the grip, WebcamTuner title, minimize/expand co
 
 ## Use in other apps
 
-The collapsible guide explains starting output, enabling the user-only native Zoom adapter, selecting WebcamTuner and avoiding duplicate background effects. Selecting a physical BRIO or laptop camera directly bypasses WebcamTuner. Test provides independent readbacks; each actual app still needs verification.
+The collapsible guide explains starting output, automatic user-only adapter preparation, selecting WebcamTuner and avoiding duplicate background effects. Selecting a physical BRIO or laptop camera directly bypasses WebcamTuner. Test provides independent readbacks; each actual app still needs verification.
 
 ## Toolbar and guide refinements (v0.6.2)
 
@@ -138,3 +138,6 @@ Autostart retains the saved-camera request while readiness checks or other outpu
 
 
 Movement controls use fixed, labelled grips with36-pixel hit areas. Drag Camera to place the person anywhere in the frame, Background to pan the selected image within its cover crop, or Label to place its text independently. Background locks are respected; zoom Background in when an exact-fit image has no room to pan. Mirror keeps drag directions natural. Arrow keys on a focused grip move one preview pixel; Shift+arrows move ten. Profile and image-specific changes save automatically. These controls are editor overlays and never appear in snapshots or the published camera.
+
+
+The desktop camera adapter checks the installed PipeWire version while output is running, even with the controls closed. Missing libraries and version upgrades trigger one automatic preparation attempt per version/start, separately from the camera producer. Failure is visible in Setup/Test and leaves PipeWire video running; **Repair camera adapter** retries. The matching package signature is verified before enabling its library. Readback works without native Zoom installed. **Use normal Zoom launcher** explicitly opts out of launcher integration and is preserved during automatic preparation; **Connect Zoom launcher** restores it. Preparation never restarts an active Zoom process.

@@ -21,6 +21,14 @@ Item {
     readonly property bool startingCamera: startDelay.running || activeAction === "start-output"
     property var pending: []
     property var adapter: ({ready:false,enabled:false,restartRequired:false})
+    readonly property bool adapterPreparing: adapterPreparation.running
+    property string adapterError: ""
+    property string adapterAttemptKey: ""
+    readonly property string adapterMessage: adapterPreparing ? qsTr("Preparing the desktop camera adapter automatically…")
+        : adapterError !== "" ? adapterError
+        : adapter.ready ? qsTr("Desktop camera adapter is ready in your home directory.")
+        : published ? qsTr("Checking the desktop camera adapter…")
+        : qsTr("The desktop camera adapter prepares automatically when camera output starts.")
     property string pluginRoot: Qt.resolvedUrl("../").toString().replace(/^file:\/\//, "").replace(/\/$/, "")
     signal starting()
     signal started()
@@ -31,9 +39,27 @@ Item {
     onConfigurationChanged: { configurationRevision++; if (enabled && published && configuration) updateDelay.restart() }
     onPanelOpenChanged: if (panelOpen&&enabled) { request("status"); request("zoom-status") }
     Component.onCompleted: Qt.callLater(function(){if(root.enabled){root.request("status");root.request("zoom-status")}})
-    onPublishedChanged: { if (!published) stopped(); else if(enabled&&configuration)updateDelay.restart() }
+    onPublishedChanged: { if (!published) stopped(); else { if(enabled&&configuration)updateDelay.restart(); Qt.callLater(root.maybePrepareAdapter) } }
+    onAdapterChanged: Qt.callLater(root.maybePrepareAdapter)
+    function maybePrepareAdapter() {
+        if (!enabled || !published || !adapter.version || adapterPreparing) return
+        var needed = !adapter.ready || (adapter.zoomInstalled && !adapter.normalLauncher && !adapter.enabled)
+        if (!needed) { adapterAttemptKey=""; adapterError=""; return }
+        var key = String(adapter.version) + ":" + !!adapter.zoomInstalled + ":" + !!adapter.normalLauncher
+        if (key !== adapterAttemptKey) prepareAdapter(false)
+    }
+    function prepareAdapter(force) {
+        if (!enabled || adapterPreparing) return
+        adapterAttemptKey=String(adapter.version||"")+":"+!!adapter.zoomInstalled+":"+!!adapter.normalLauncher
+        adapterError=""
+        adapterPreparation.command=["python3",pluginRoot+"/bin/output-control.py",force?"setup-zoom":"ensure-zoom"]
+        adapterPreparation.running=true
+        adapterDeadline.restart()
+    }
     function request(action, args) {
         if(!enabled)return
+        if(action==="setup-zoom"){prepareAdapter(true);return}
+        if(action==="zoom-status"&&(activeAction===action||pending.some(function(item){return item.action===action})))return
         if (action === "status" && (activeAction !== "" || pending.length)) return
         if (pending.length >= 8) { feedback=qsTr("Please wait for the current output action."); return }
         pending=pending.concat([{action:action,args:args||[]}]);pump()
@@ -46,6 +72,7 @@ Item {
     }
     function start() {
         if(!enabled || !readyToStart || busy || !configuration || !configuration.camera)return false
+        adapterAttemptKey=""
         starting();feedback=qsTr("Starting your composed camera output…");startDelay.restart()
         return true
     }
@@ -70,7 +97,28 @@ Item {
         }
     }
     Timer { id:startDelay;interval:500;onTriggered:root.request("start-output",["--request",JSON.stringify(Object.assign({},root.configuration,{configurationRevision:root.configurationRevision}))]) }
-    Timer { interval:3000;repeat:true;running:root.enabled&&(root.panelOpen||root.published||root.startingCamera||root.stopping||root.state.serviceActive===true);onTriggered:{if(!root.busy){root.request("status");if(root.panelOpen)root.request("zoom-status")}} }
+    Timer { interval:3000;repeat:true;running:root.enabled&&(root.panelOpen||root.published||root.startingCamera||root.stopping||root.state.serviceActive===true);onTriggered:{if(!root.busy){root.request("status");if(root.panelOpen||root.published)root.request("zoom-status")}} }
+    Timer {
+        id:adapterDeadline;interval:120000
+        onTriggered:{
+            root.adapterError=qsTr("Camera adapter preparation timed out. Retry in Setup; camera output is still running.")
+            adapterPreparation.running=false
+        }
+    }
+    Process {
+        id:adapterPreparation
+        stdout:StdioCollector {id:adapterResult;waitForEnd:true}
+        stderr:StdioCollector {id:adapterErrors;waitForEnd:true}
+        onExited:function(code){
+            adapterDeadline.stop()
+            try {
+                var value=JSON.parse(adapterResult.text)
+                if(code!==0 || !value.ready)throw new Error(value.message||value.error||adapterErrors.text||qsTr("Camera adapter preparation failed."))
+                root.adapter=value
+                root.adapterError=""
+            }catch(e){if(root.adapterError==="")root.adapterError=String(e.message||e).slice(0,1200)}
+        }
+    }
     Timer { id:updateDelay;interval:180;onTriggered:root.configure() }
     function configure() {
         if(!enabled || stopping || !published || !configuration)return

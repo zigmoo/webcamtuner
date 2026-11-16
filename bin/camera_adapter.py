@@ -1,5 +1,7 @@
 """Install and scope the native-camera adapter entirely to the signed-in user."""
 import datetime
+from contextlib import contextmanager
+import fcntl
 import hashlib
 import json
 import os
@@ -14,6 +16,9 @@ import time
 import urllib.parse
 import urllib.request
 
+ZOOM_DESKTOP = Path('/usr/share/applications/Zoom.desktop')
+NORMAL_LAUNCHER = 'X-WebcamTuner-NormalLauncher=true'
+
 
 def data_root():
     root = Path(os.environ.get('XDG_DATA_HOME') or Path.home() / '.local/share') / 'webcamtuner'
@@ -27,9 +32,45 @@ def package_version():
     return result.split()[1]
 
 
-def library_path():
-    version = re.sub('[^a-zA-Z0-9._-]', '_', package_version())
+def library_path(version=None):
+    version = re.sub('[^a-zA-Z0-9._-]', '_', version or package_version())
     return data_root() / 'adapters' / version / 'libpw-v4l2.so'
+
+
+def desktop_path():
+    return data_root().parent / 'applications/Zoom.desktop'
+
+
+def wrapper_path():
+    return Path.home() / '.local/bin/webcamtuner-zoom'
+
+
+def library_ready(path):
+    if not path.is_file():
+        return False
+    with path.open('rb') as library:
+        return library.read(4) == b'\x7fELF'
+
+
+@contextmanager
+def adapter_update_lock():
+    root = data_root()
+    root.mkdir(mode=0o700, parents=True, exist_ok=True)
+    with (root / 'adapter-setup.lock').open('a') as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise RuntimeError('Camera adapter preparation is already running. Its readiness will refresh automatically.')
+        yield
+
+
+def atomic_text(path, text, mode=0o600):
+    temporary = path.with_suffix(path.suffix + '.new')
+    temporary.write_text(text)
+    temporary.chmod(mode)
+    temporary.replace(path)
+    if path.read_text() != text:
+        raise RuntimeError('Camera adapter launcher failed storage verification.')
 
 
 def zoom_processes():
@@ -44,21 +85,25 @@ def zoom_processes():
 
 
 def status():
-    path = library_path()
+    version = package_version()
+    path = library_path(version)
     processes = zoom_processes()
     loaded = False
     for pid in processes:
         try:
-            if 'libpw-v4l2.so' in (Path('/proc') / str(pid) / 'maps').read_text():
+            maps = (Path('/proc') / str(pid) / 'maps').read_text().splitlines()
+            if any(line.split(None, 5)[-1] == str(path.resolve()) for line in maps):
                 loaded = True
         except OSError:
             pass
-    desktop = Path(os.environ.get('XDG_DATA_HOME') or Path.home() / '.local/share') / 'applications/Zoom.desktop'
-    enabled = desktop.is_file() and 'webcamtuner-zoom' in desktop.read_text()
-    ready = path.is_file() and path.read_bytes()[:4] == b'\x7fELF'
+    desktop = desktop_path()
+    content = desktop.read_text() if desktop.is_file() else ''
+    enabled = 'webcamtuner-zoom' in content and wrapper_path().is_file()
+    ready = library_ready(path)
     return {'ready': ready, 'enabled': enabled, 'zoomRunning': bool(processes), 'adapterLoaded': loaded,
             'restartRequired': bool(processes) and enabled and not loaded,
-            'library': str(path), 'version': package_version()}
+            'library': str(path), 'version': version, 'zoomInstalled': ZOOM_DESKTOP.is_file(),
+            'normalLauncher': NORMAL_LAUNCHER in content.splitlines()}
 
 
 def download(url, maximum):
@@ -82,9 +127,9 @@ def download(url, maximum):
     return value
 
 
-def setup():
+def prepare_library():
     target = library_path()
-    if not target.is_file() or target.open('rb').read(4) != b'\x7fELF':
+    if not library_ready(target):
         version = package_version()
         available = subprocess.check_output(['pacman', '-Si', 'pipewire-v4l2'], text=True, timeout=10)
         remote_version = re.search(r'^Version\s*:\s*(\S+)', available, re.M)
@@ -116,35 +161,65 @@ def setup():
                 raise RuntimeError('Camera adapter library failed storage verification.')
             temporary.replace(target)
             (target.parent / 'COPYING').write_bytes(license_text)
-    desktop_dir = Path(os.environ.get('XDG_DATA_HOME') or Path.home() / '.local/share') / 'applications'
+    return target
+
+
+def install_launcher():
+    if not ZOOM_DESKTOP.is_file():
+        raise RuntimeError('Install native Zoom before enabling its camera launcher.')
+    desktop = desktop_path()
+    desktop_dir = desktop.parent
     desktop_dir.mkdir(parents=True, exist_ok=True)
-    desktop = desktop_dir / 'Zoom.desktop'
     if desktop.is_file() and 'webcamtuner-zoom' not in desktop.read_text():
         backup = data_root() / 'backups'
         backup.mkdir(mode=0o700, parents=True, exist_ok=True)
-        shutil.copy2(desktop, backup / ('Zoom.desktop.' + datetime.datetime.now().strftime('%Y%m%d-%H%M%S')))
-    wrapper = Path.home() / '.local/bin/webcamtuner-zoom'
+        shutil.copy2(desktop, backup / ('Zoom.desktop.' + datetime.datetime.now().strftime('%Y%m%d-%H%M%S-%f')))
+    wrapper = wrapper_path()
     wrapper.parent.mkdir(parents=True, exist_ok=True)
     script = Path(__file__).resolve().with_name('zoom-camera.py')
-    wrapper.write_text('#!/bin/bash\nexec python3 ' + shlex.quote(str(script)) + ' "$@"\n')
-    wrapper.chmod(0o755)
-    vendor = Path('/usr/share/applications/Zoom.desktop')
-    if not vendor.is_file():
-        raise RuntimeError('Install native Zoom before enabling its camera adapter.')
-    content = vendor.read_text()
+    atomic_text(wrapper, '#!/bin/bash\nexec python3 ' + shlex.quote(str(script)) + ' "$@"\n', 0o755)
+    content = ZOOM_DESKTOP.read_text()
     executable = str(wrapper).replace('\\', '\\\\').replace('"', '\\"').replace('`', '\\`').replace('$', '\\$')
     content = re.sub(r'^Exec=.*$', lambda _: 'Exec="' + executable + '" %U', content, flags=re.M)
-    desktop.write_text(content)
+    atomic_text(desktop, content)
     subprocess.run(['update-desktop-database', str(desktop_dir)], capture_output=True, timeout=10)
-    return dict(status(), message='User-only camera adapter enabled for Zoom. Quit and reopen Zoom once to apply it.')
+
+
+def ensure():
+    """Prepare readback for every user; scope Zoom integration when installed."""
+    with adapter_update_lock():
+        prepare_library()
+        value = status()
+        if value['zoomInstalled'] and not value['normalLauncher'] and not value['enabled']:
+            install_launcher()
+    value = status()
+    return dict(value, message='Camera adapter is ready in your home directory.')
+
+
+def setup():
+    with adapter_update_lock():
+        prepare_library()
+        install_launcher()
+    value = status()
+    return dict(value, message='Camera adapter enabled. Restart Zoom to load it.' if value['restartRequired'] else 'Camera adapter enabled. Open Zoom and select WebcamTuner.')
 
 
 def disable():
-    desktop = Path(os.environ.get('XDG_DATA_HOME') or Path.home() / '.local/share') / 'applications/Zoom.desktop'
-    if desktop.is_file() and 'webcamtuner-zoom' in desktop.read_text():
-        backups=sorted((data_root()/'backups').glob('Zoom.desktop.*'))
-        shutil.copy2(backups[-1] if backups else '/usr/share/applications/Zoom.desktop', desktop)
-        subprocess.run(['update-desktop-database', str(desktop.parent)], capture_output=True, timeout=10)
+    with adapter_update_lock():
+        desktop = desktop_path()
+        content = None
+        if desktop.is_file() and 'webcamtuner-zoom' in desktop.read_text():
+            backups = sorted((data_root()/'backups').glob('Zoom.desktop.*'))
+            content = (backups[-1] if backups else ZOOM_DESKTOP).read_text()
+        elif desktop.is_file():
+            content = desktop.read_text()
+        elif ZOOM_DESKTOP.is_file():
+            content = ZOOM_DESKTOP.read_text()
+        if content is not None:
+            desktop.parent.mkdir(parents=True, exist_ok=True)
+            content = '\n'.join(line for line in content.splitlines() if not line.startswith('X-WebcamTuner-NormalLauncher='))
+            atomic_text(desktop, content.rstrip() + '\n' + NORMAL_LAUNCHER + '\n')
+            subprocess.run(['update-desktop-database', str(desktop.parent)], capture_output=True, timeout=10)
     return dict(status(), message='Zoom now uses its normal native launcher. Restart Zoom to apply.')
 
 
