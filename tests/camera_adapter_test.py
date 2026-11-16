@@ -4,6 +4,7 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import threading
 import unittest
 from unittest.mock import patch
 
@@ -105,6 +106,19 @@ class AdapterTests(unittest.TestCase):
             value=adapter.status()
         self.assertFalse(value['adapterLoaded'])
         self.assertTrue(value['restartRequired'])
+    def test_launch_waits_for_an_existing_installer_to_finish(self):
+        self.cached();held=threading.Event();release=threading.Event()
+        def hold():
+            with adapter.adapter_update_lock():
+                held.set();release.wait(2)
+        thread=threading.Thread(target=hold);thread.start()
+        self.assertTrue(held.wait(1))
+        timer=threading.Timer(.15,release.set);timer.start()
+        try:
+            value=adapter.ensure(wait_seconds=1)
+            self.assertTrue(value['ready'] and value['enabled'])
+        finally:
+            release.set();thread.join(2);timer.join(2)
 
 
 if __name__=='__main__':unittest.main()

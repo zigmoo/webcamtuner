@@ -53,14 +53,19 @@ def library_ready(path):
 
 
 @contextmanager
-def adapter_update_lock():
+def adapter_update_lock(wait_seconds=0):
     root = data_root()
     root.mkdir(mode=0o700, parents=True, exist_ok=True)
     with (root / 'adapter-setup.lock').open('a') as lock:
-        try:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            raise RuntimeError('Camera adapter preparation is already running. Its readiness will refresh automatically.')
+        deadline = time.monotonic() + max(0, min(120, wait_seconds))
+        while True:
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if time.monotonic() >= deadline:
+                    raise RuntimeError('Camera adapter preparation is already running. Its readiness will refresh automatically.')
+                time.sleep(.1)
         yield
 
 
@@ -185,9 +190,9 @@ def install_launcher():
     subprocess.run(['update-desktop-database', str(desktop_dir)], capture_output=True, timeout=10)
 
 
-def ensure():
+def ensure(wait_seconds=0):
     """Prepare readback for every user; scope Zoom integration when installed."""
-    with adapter_update_lock():
+    with adapter_update_lock(wait_seconds):
         prepare_library()
         value = status()
         if value['zoomInstalled'] and not value['normalLauncher'] and not value['enabled']:

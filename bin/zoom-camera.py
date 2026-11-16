@@ -3,20 +3,27 @@
 import json
 import os
 from pathlib import Path
+import subprocess
 import sys
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from camera_adapter import library_path
+from camera_adapter import ensure
 
 
 def main():
     environment = dict(os.environ)
-    library = library_path()
-    if library.is_file():
+    library = None
+    try:
+        value = ensure(wait_seconds=60)
+        if value['ready']:
+            library = Path(value['library'])
+    except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
+        print(json.dumps({'cameraAdapterError': str(error)[:500]}), file=sys.stderr)
+    if library is not None:
         existing = environment.get('LD_PRELOAD', '')
         environment['LD_PRELOAD'] = str(library) + (' ' + existing if existing else '')
-        # Enumerate all available sources, so physical cameras remain selectable.
-        environment.pop('PIPEWIRE_V4L2_TARGET', None)
+    # Enumerate all available sources, so physical cameras remain selectable.
+    environment.pop('PIPEWIRE_V4L2_TARGET', None)
     os.execve('/usr/bin/zoom', ['/usr/bin/zoom', *sys.argv[1:]], environment)
 
 

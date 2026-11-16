@@ -221,7 +221,7 @@ def main():
         if args.action == 'diagnostics':
             result['log'] = run(['journalctl', '--user', '-u', UNIT, '-u', camera_stream.UNIT, '-n', '20', '--no-pager']).stdout[-6000:]
         print(json.dumps(result))
-    except (RuntimeError, subprocess.TimeoutExpired, OSError, ValueError) as error:
+    except (RuntimeError, subprocess.SubprocessError, OSError, ValueError) as error:
         print(json.dumps({'state': 'error', 'published': False, 'message': str(error)[:1000]}))
         raise SystemExit(1)
 

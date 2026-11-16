@@ -141,3 +141,5 @@ Movement controls use fixed, labelled grips with36-pixel hit areas. Drag Camera 
 
 
 The desktop camera adapter checks the installed PipeWire version while output is running, even with the controls closed. Missing libraries and version upgrades trigger one automatic preparation attempt per version/start, separately from the camera producer. Failure is visible in Setup/Test and leaves PipeWire video running; **Repair camera adapter** retries. The matching package signature is verified before enabling its library. Readback works without native Zoom installed. **Use normal Zoom launcher** explicitly opts out of launcher integration and is preserved during automatic preparation; **Connect Zoom launcher** restores it. Preparation never restarts an active Zoom process.
+
+The user Zoom launcher also prepares the adapter before starting Zoom, so opening Zoom before camera output is supported. It waits up to60seconds for a concurrent installer; preparation failures still allow native Zoom to open with its normal devices.
