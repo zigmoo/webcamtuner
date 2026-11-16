@@ -37,7 +37,8 @@ ScrollView {
         Plain {text:root.outputControl?root.outputControl.feedback:"";color:"#93c5aa";visible:text!==""}
         GridLayout {
             Layout.fillWidth:true
-            columns:root.availableWidth>=760?2:1
+            // Keep both consumer paths visible together, including in the default palette.
+            columns:2
             columnSpacing:12;rowSpacing:12
             ReadbackProbe {id:pipewireProbe;objectName:"pipewireReadback";Layout.fillWidth:true;Layout.preferredWidth:1;Layout.alignment:Qt.AlignTop;backend:"pipewire";active:root.receiving;targetSerial:root.outputControl?String(root.outputControl.state.nodeSerial||""):""}
             ReadbackProbe {id:v4l2Probe;objectName:"v4l2Readback";Layout.fillWidth:true;Layout.preferredWidth:1;Layout.alignment:Qt.AlignTop;backend:"v4l2";active:root.receiving&&root.outputControl.adapter.ready;targetSerial:root.outputControl?String(root.outputControl.state.nodeSerial||""):"";inactiveMessage:root.outputControl&&!root.outputControl.adapter.ready?root.outputControl.adapterMessage:qsTr("Start camera output to test this consumer.")}

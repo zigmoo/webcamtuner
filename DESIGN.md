@@ -278,3 +278,8 @@ Library preparation is separate from native Zoom installation. The matching sign
 Focused backend tests cover cached/upgrade/no-Zoom paths, signature/version rejection, launcher storage, explicit opt-out/re-enable, competing preparation and older loaded libraries. Offscreen controller tests cover output start, attaching to live output with controls closed, version changes, bounded failure without a camera failure/stop, retry and normal-launcher choice. Retain a real V4L2 readback and matching producer identity as activation evidence.
 
 Zoom-first launch order also runs the same preparation owner before exec, with a60-second bounded wait for an existing installer. Helper errors/timeouts retain normal native Zoom startup and unrelated process environment. The preload remains scoped to that child process; no active Zoom process is terminated.
+
+
+## Paired Test previews — v0.9.13, DIL-3469
+
+PipeWire and V4L2 readbacks remain in two equal columns throughout the supported window range, including the default780px and minimum540px palette. The former760px available-width breakpoint stacked the cards after padding was deducted from the default window and contradicted the operator's comparison preference. Keep text wrapping and the existing full-height vertical scrollbar; do not switch the consumer cards into a vertical stack. A resize regression checks both card positions, widths, viewport containment and access to acceptance text at540/780/1100px. Output transport and independent consumer lifetimes are unchanged.
