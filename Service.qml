@@ -4,6 +4,7 @@ import Quickshell.Io
 import qs.Commons as Commons
 import "ui" as Tuner
 import "ui/BuildInfo.js" as BuildInfo
+import "BarServiceBridge.js" as BarServiceBridge
 
 Scope {
     id: root
@@ -16,6 +17,16 @@ Scope {
     function setup() { panel.openSetup() }
     function backgrounds() { panel.openBackgrounds() }
     function toggle() { opened ? close() : open() }
+    property var bridgePublication: null
+    Component.onCompleted: bridgePublication = BarServiceBridge.publish(widgetControls)
+    Component.onDestruction: BarServiceBridge.clear(bridgePublication)
+    QtObject {
+        id: widgetControls
+        readonly property bool opened: root.opened
+        function open() { root.open() }
+        function close() { root.close() }
+        function toggle() { root.toggle() }
+    }
     IpcHandler {
         target: "moo.webcamtuner"
         function open(): void { root.open() }

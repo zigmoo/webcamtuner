@@ -9,7 +9,7 @@ target = root / "package" / "moo.webcamtuner"
 target.mkdir(parents=True, exist_ok=True)
 version = json.loads((root / "manifest.json").read_text())["version"]
 (root / "ui" / "BuildInfo.js").write_text(".pragma library\n// Generated from manifest.json by stage.py.\nvar version = " + json.dumps(version) + ";\n")
-for filename in ("manifest.json", "BarWidget.qml", "Service.qml", "Preview.qml"):
+for filename in ("manifest.json", "BarWidget.qml", "Service.qml", "Preview.qml", "BarServiceBridge.js"):
     shutil.copy2(root / filename, target / filename)
 if (target / "ui").exists():
     shutil.rmtree(target / "ui")
