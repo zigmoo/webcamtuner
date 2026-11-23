@@ -70,7 +70,7 @@ For focused checks, set WEBCAMTUNER_TEST_ROOT to a disposable project-specific d
 
 Mirror is on by default, the opposite of the original unmirrored preview. Older profiles without a mirror field adopt the new default; an explicit saved choice is preserved. The checkbox saves its setting and verifies readback before changing orientation. Mirror changes preserve other unsaved draft settings. Mirror reflects the entire finished composite: camera/person, background and label, including their positions and label lettering. Preview, snapshots and the published camera use the same orientation. Dragging the camera, background or label follows the pointer in either mode; the label editing field stays readable while typing.
 
-The plugin opens a native Quickshell floating window. Drag the WebcamTuner heading to move it, or use normal window-manager move/resize controls. Clicking elsewhere does not dismiss it. The native Close button and Escape hide the window and stop the current preview. The standalone Preview.qml uses the same window component.
+The plugin opens a native Quickshell floating window. Drag the WebcamTuner heading to move it, or use normal window-manager move/resize controls. Clicking elsewhere does not dismiss it. The native Close button, Escape, and Q hide the window and stop the current preview. Q remains a typing key in text fields. The standalone Preview.qml uses the same window component.
 
 ## Virtual-camera output
 

@@ -59,6 +59,23 @@ FloatingWindow {
         tabs.currentIndex = 1
     }
     function closeEditor() { editor.previewOn = false; visible = false }
+
+    Shortcut {
+        sequence: "Esc"
+        enabled: window.visible
+        autoRepeat: false
+        onActivated: window.closeEditor()
+    }
+    Shortcut {
+        sequence: "Q"
+        enabled: {
+            var focusedItem = titlebar.Window.activeFocusItem
+            return window.visible && !(focusedItem instanceof TextInput) && !(focusedItem instanceof TextEdit)
+        }
+        autoRepeat: false
+        onActivated: window.closeEditor()
+    }
+
     function toggleCollapse() {
         if (!collapsed) {
             expandedWidth = Math.max(540, width)
@@ -161,6 +178,5 @@ FloatingWindow {
         accent: window.accent
         onRequest: function(action, args) { bridge.request(action, args) }
         onCameraTabRequested: tabs.currentIndex = 0
-        Keys.onEscapePressed: window.closeEditor()
     }
 }
