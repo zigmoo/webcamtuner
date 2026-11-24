@@ -94,7 +94,7 @@ def status(test_only=False):
             dump = json.loads(run(['pw-dump']).stdout)
             node = next((n for n in dump if n.get('type') == 'PipeWire:Interface:Node' and n.get('info', {}).get('props', {}).get('node.name') == camera_stream.NODE), None)
             published = bool(node and value.get('published'))
-            return dict(value, state='output-published' if published else value.get('state', 'starting'), published=published,
+            return dict(value, state='output-published' if published else value.get('state', 'starting'), published=published, serviceActive=True,
                         synthetic=False, nodeId=node['id'] if node else None,
                         nodeSerial=node['info']['props']['object.serial'] if node else None,
                         format={'width':1280, 'height':720, 'fps':30},
@@ -166,7 +166,7 @@ def start_output(request):
         raise ValueError('A bounded camera configuration is required.')
     value = json.loads(request)
     if not isinstance(value, dict) or not isinstance(value.get('camera'), str):
-        raise ValueError('Choose a local camera first.')
+        raise ValueError('Choose a local or remote camera first.')
     existing = status()
     if existing.get('processed'):
         camera_stream.command(value)
@@ -179,7 +179,7 @@ def start_output(request):
                   str(root / 'preview-python'), str(root / 'process_preview.py'), '--publish', '--request', request])
     if result.returncode:
         raise RuntimeError(result.stderr.strip()[:1000])
-    deadline = time.monotonic() + 20
+    deadline = time.monotonic() + (65 if value['camera'].startswith('sshcam:') else 20)
     while time.monotonic() < deadline:
         current = status()
         if current.get('published') and current.get('processed'):

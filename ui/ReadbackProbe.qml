@@ -23,7 +23,7 @@ Rectangle {
     readonly property bool connected:active&&!stopping&&consumer.running&&frame!==""&&lastFrameAt>0&&connectionState==="connected"
     readonly property var consumerPid:consumer.processId
     implicitHeight:content.implicitHeight+24
-    color:"#222b35";radius:8
+    color:root.palette.alternateBase;radius:8
     onActiveChanged:resetConnection()
     onTargetSerialChanged:resetConnection()
     onInactiveMessageChanged:if(!active)message=inactiveMessage
@@ -71,15 +71,25 @@ Rectangle {
     ColumnLayout {
         id:content
         x:12;y:12;width:root.width-24;spacing:8
-        Text {text:root.backend==="pipewire"?qsTr("PipeWire output · independent readback"):qsTr("V4L2 adapter output · independent readback");textFormat:Text.PlainText;color:"#e9ecef";font.bold:true;wrapMode:Text.WordWrap;Layout.fillWidth:true}
-        Text {objectName:"consumerConnection";text:root.connected?qsTr("Connected · consumer %1 · source %2").arg(String(root.consumerPid)).arg(String(root.measurement.nodeSerial||root.targetSerial)):root.connectionState==="connecting"?qsTr("Connecting…"):root.connectionState==="reconnecting"?qsTr("Reconnecting…"):qsTr("Disconnected");textFormat:Text.PlainText;color:root.connected?"#93c5aa":"#edb17a";wrapMode:Text.WordWrap;Layout.fillWidth:true}
+        Text {text:root.backend==="pipewire"?qsTr("PipeWire output · independent readback"):qsTr("V4L2 adapter output · independent readback");textFormat:Text.PlainText;color:root.palette.windowText;font.bold:true;wrapMode:Text.WordWrap;Layout.fillWidth:true}
+        Text {objectName:"consumerConnection";text:root.connected?qsTr("Connected · consumer %1 · source %2").arg(String(root.consumerPid)).arg(String(root.measurement.nodeSerial||root.targetSerial)):root.connectionState==="connecting"?qsTr("Connecting…"):root.connectionState==="reconnecting"?qsTr("Reconnecting…"):qsTr("Disconnected");textFormat:Text.PlainText;color:root.connected?root.palette.link:root.palette.linkVisited;wrapMode:Text.WordWrap;Layout.fillWidth:true}
         Rectangle {
-            Layout.fillWidth:true;Layout.preferredHeight:Math.min(240,width*9/16);color:"#080b10";clip:true
+            Layout.fillWidth:true;Layout.preferredHeight:Math.min(240,width*9/16);color:root.palette.base;clip:true
             Image {objectName:"consumerFrame";anchors.fill:parent;source:root.frame;fillMode:Image.PreserveAspectFit;cache:false;asynchronous:true;retainWhileLoading:true}
-            Text {anchors.centerIn:parent;width:parent.width-24;text:root.message;visible:root.frame==="";color:"#b8c2cd";textFormat:Text.PlainText;wrapMode:Text.WordWrap;horizontalAlignment:Text.AlignHCenter}
+            Text {anchors.centerIn:parent;width:parent.width-24;text:root.message;visible:root.frame==="";color:root.palette.windowText;textFormat:Text.PlainText;wrapMode:Text.WordWrap;horizontalAlignment:Text.AlignHCenter}
         }
-        Text {objectName:"consumerMeasurement";text:root.frame!==""&&root.measurement.receivedFrames?qsTr("Received %1 frames · %2 × %3 · %4 FPS · node %5").arg(root.measurement.receivedFrames).arg(root.measurement.width).arg(root.measurement.height).arg(Number(root.measurement.receiveFps||0).toFixed(1)).arg(root.measurement.nodeId):root.message;textFormat:Text.PlainText;color:"#93c5aa";wrapMode:Text.WordWrap;Layout.fillWidth:true}
-        Button {objectName:"retryConsumer";text:qsTr("Retry consumer");visible:root.active&&root.frame==="";enabled:!consumer.running&&!reconnect.running;onClicked:root.retry()}
+        Text {objectName:"consumerMeasurement";text:root.frame!==""&&root.measurement.receivedFrames?qsTr("Received %1 frames · %2 × %3 · %4 FPS · node %5").arg(root.measurement.receivedFrames).arg(root.measurement.width).arg(root.measurement.height).arg(Number(root.measurement.receiveFps||0).toFixed(1)).arg(root.measurement.nodeId):root.message;textFormat:Text.PlainText;color:root.palette.link;wrapMode:Text.WordWrap;Layout.fillWidth:true}
+        Button {
+            hoverEnabled: true
+            ToolTip.visible: hovered
+            ToolTip.delay: 500
+            ToolTip.text: qsTr("Reconnect this test reader to the published camera.")
+            objectName:"retryConsumer"
+            text:qsTr("Retry consumer")
+            visible:root.active&&root.frame===""
+            enabled:!consumer.running&&!reconnect.running
+            onClicked:root.retry()
+        }
     }
     Process {
         id:consumer

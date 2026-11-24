@@ -1,4 +1,4 @@
-"""Test navigation keeps preview choice; explicit Hide cannot resemble a live mock image."""
+"""Switching tabs leaves the camera preview available while output is live."""
 import json,os,subprocess,uuid
 from pathlib import Path
 root=Path(__file__).resolve().parents[1]
@@ -22,19 +22,16 @@ ShellRoot {
   expect(!w.testPanel.receiving,"fixture cannot connect to production consumers")
   w.openCamera()
   expect(w.editor.previewOn,"returning Camera retains live preview")
-  w.editor.toggleCameraPreview()
-  expect(!w.editor.previewOn,"explicit Hide is retained")
-  w.openTest();w.openCamera()
-  expect(!w.editor.previewOn,"navigation respects explicit Hide")
-  expect(inspect.findChild(w.editor,"hiddenPreviewNotice").visible,"hidden preview is explicitly labelled")
-  expect(inspect.findChild(w.editor,"previewCameraButton").text==="Show preview","live output offers Show preview")
-  console.log("PASS: Test preserves preview, explicit Hide stays hidden with a clear notice, no fixture consumers")
+  w.openBackgrounds();w.openSetup();w.openCamera()
+  expect(w.editor.previewOn,"Backgrounds and Setup preserve the preview")
+  expect(inspect.findChild(w.editor,"previewCameraButton")===null,"preview has no separate toggle")
+  console.log("PASS: Camera preview survives tab changes while the output is live")
   Qt.quit()
  }}
  Timer {interval:7000;running:true;onTriggered:Qt.exit(1)}
 }'''.replace('"UI_PATH"',json.dumps((root/'ui').as_uri()))
 (scratch/'shell.qml').write_text(qml)
-r=subprocess.run(['qs','-p',str(scratch/'shell.qml')],env=dict(os.environ,QT_QPA_PLATFORM='offscreen',QT_QUICK_BACKEND='software',WEBCAMTUNER_CONFIG_ROOT=str(scratch/'profiles')),capture_output=True,text=True,timeout=10)
+r=subprocess.run(['qs','-p',str(scratch/'shell.qml')],env=dict(os.environ,QT_QPA_PLATFORM='offscreen',QT_QUICK_BACKEND='software',WEBCAMTUNER_CONFIG_ROOT=str(scratch/'profiles'),XDG_CONFIG_HOME=str(scratch/'config')),capture_output=True,text=True,timeout=10)
 out=r.stdout+r.stderr
 if r.returncode or 'PASS:' not in out:raise SystemExit(out[-5000:])
-print('PASS: Camera/Test navigation retains preview choice, Hide is explicit, test mode cannot consume the live feed')
+print('PASS: live preview is preserved across Camera, Backgrounds, Setup, and Test')

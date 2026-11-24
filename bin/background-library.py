@@ -186,7 +186,9 @@ def entry(path, cache, crops=None, locks=None, labels=None, overlays=None):
     cached = None
     try:
         candidate = json.loads(index.read_text()) if not index.is_symlink() else {}
-        if candidate.get('stamp') == stamp and re.fullmatch('[a-f0-9]{64}', candidate.get('digest', '')):
+        if (isinstance(candidate, dict) and candidate.get('stamp') == stamp and re.fullmatch('[a-f0-9]{64}', candidate.get('digest', ''))
+                and isinstance(candidate.get('dimensions'), list) and len(candidate['dimensions']) == 2
+                and candidate.get('format')):
             target = cache / (candidate['digest'] + '.jpg')
             if target.is_file() and not target.is_symlink():
                 cached = candidate
@@ -200,13 +202,15 @@ def entry(path, cache, crops=None, locks=None, labels=None, overlays=None):
             data = stream.read(MAX_BYTES + 1)
         if len(data) > MAX_BYTES:
             raise ValueError('Image exceeds 50 MiB.')
-        image, _ = decode(data)
+        image, extension = decode(data)
+        dimensions = list(image.size)
         after = path.lstat()
         if stamp != [after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns, after.st_ctime_ns]:
             raise ValueError('Image is still being copied. It will be retried automatically.')
         digest = hashlib.sha256(data).hexdigest()
         thumbnail(image, digest, cache)
-        cached = {'stamp': stamp, 'digest': digest}
+        cached = {'stamp': stamp, 'digest': digest, 'dimensions': dimensions,
+                  'format': 'JPEG' if extension == '.jpg' else extension[1:].upper()}
         atomic_write(index, json.dumps(cached).encode())
     digest = cached['digest']
     settings = read_settings() if crops is None or locks is None or labels is None or overlays is None else None
@@ -215,6 +219,8 @@ def entry(path, cache, crops=None, locks=None, labels=None, overlays=None):
     labels = settings['labels'] if labels is None else labels
     overlays = settings['overlays'] if overlays is None else overlays
     return {'id': digest, 'name': display_name(path), 'path': str(path),
+            'metadata': {'width': cached['dimensions'][0], 'height': cached['dimensions'][1],
+                         'format': cached['format'], 'bytes': before.st_size, 'modified': before.st_mtime_ns // 1_000_000},
             'thumbnail': (cache / (digest + '.jpg')).as_uri(), 'crop': crops.get(digest, default_crop()), 'locked': locks.get(digest, False), 'label': labels.get(digest, ''), 'overlay': overlays.get(digest, {'enabled': False, 'opacity': 0.75})}
 
 
@@ -435,9 +441,32 @@ def add(values):
     return result
 
 
+def seed_starters():
+    library, _ = directories()
+    marker = library / '.starter-backgrounds-v1'
+    if marker.exists():
+        return {'seeded': False}
+    assets = Path(__file__).resolve().parents[1] / 'assets' / 'starter-backgrounds'
+    sources = [assets / name for name in ('Quiet Office.jpg', 'Misty Lake.jpg')]
+    if not all(path.is_file() for path in sources):
+        raise ValueError('The bundled starter backgrounds are missing.')
+    fd = os.open(library / '.starter-backgrounds.lock', os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        if marker.exists():
+            return {'seeded': False}
+        result = add([str(path) for path in sources])
+        if result['errors']:
+            raise ValueError('Unable to add the bundled starter backgrounds.')
+        atomic_write(marker, b'installed\n')
+        return {'seeded': True}
+    finally:
+        os.close(fd)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=['list', 'add', 'crop', 'lock', 'trash', 'inspect', 'label', 'overlay'])
+    parser.add_argument('action', choices=['list', 'add', 'seed', 'crop', 'lock', 'trash', 'inspect', 'label', 'overlay'])
     parser.add_argument('--paths', default='[]')
     parser.add_argument('--path')
     parser.add_argument('--crop')
@@ -449,7 +478,9 @@ def main():
     parser.add_argument('--keep-paths', default='[]')
     args = parser.parse_args()
     try:
-        if args.action == 'inspect':
+        if args.action == 'seed':
+            result = seed_starters()
+        elif args.action == 'inspect':
             _, result = managed_image(args.path, args.id)
         elif args.action == 'lock':
             result = lock_image(args.path, args.id, args.locked == 'true')

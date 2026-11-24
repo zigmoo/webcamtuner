@@ -99,6 +99,32 @@ class BackgroundTests(unittest.TestCase):
         np.testing.assert_array_equal(output[25:35, 30:50], frame[25:35, 30:50])
         self.assertNotEqual(int(output[0, 0, 0]), int(frame[0, 0, 0]))
 
+    def test_blur_excludes_the_person_at_their_original_position(self):
+        shape = (120, 200)
+        wall = (40, 150, 65)
+        person = (20, 30, 250)
+        source = np.full((*shape, 3), wall, dtype=np.uint8)
+        source_matte = np.zeros((*shape, 1), np.float32)
+        source_matte[18:112, 30:85] = 1
+        source[18:112, 30:85] = person
+
+        placed = np.zeros_like(source)
+        placed_matte = np.zeros_like(source_matte)
+        placed_matte[18:112, 120:175] = 1
+        placed[18:112, 120:175] = person
+        result = preview.composite(placed, placed_matte, "blur", None,
+                                   blur_source=source, blur_mask=source_matte)
+
+        np.testing.assert_array_equal(result[50, 50], wall)
+        np.testing.assert_array_equal(result[50, 25], wall)
+        np.testing.assert_array_equal(result[50, 145], person)
+        self.assertTrue(np.all(result[:, :100] == wall))
+
+    def test_blur_with_no_visible_background_preserves_the_opaque_foreground(self):
+        frame = np.full((36, 48, 3), (40, 30, 220), np.uint8)
+        matte = np.ones((36, 48, 1), np.float32)
+        np.testing.assert_array_equal(preview.composite(frame, matte, "blur", None), frame)
+
     def test_mirror_reflects_the_finished_scene(self):
         frame = np.zeros((20, 30, 3), dtype=np.uint8)
         frame[:, :10] = (40, 80, 200)

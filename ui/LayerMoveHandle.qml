@@ -6,15 +6,18 @@ Rectangle {
     property string text: ""
     property string dragObjectName: ""
     property string hint: qsTr("Drag to move. Arrow keys move a little; Shift+arrows move farther.")
-    property color accent: "#93c5aa"
+    property color accent: palette.link
+    property bool selected: false
+    readonly property bool hovered: dragArea.containsMouse
+    readonly property bool dragging: dragArea.pressed
     signal movementStarted()
     signal movementRequested(real dx, real dy)
     signal movementFinished()
     implicitWidth: caption.implicitWidth + 40
     implicitHeight: 36
     radius: 4
-    color: dragArea.pressed ? "#40596368" : dragArea.containsMouse ? "#39434f" : "#252d37"
-    border.color: activeFocus || dragArea.pressed ? accent : "#65717e"
+    color: dragArea.pressed ? root.palette.midlight : dragArea.containsMouse || selected ? root.palette.midlight : root.palette.alternateBase
+    border.color: activeFocus || dragArea.pressed || selected ? accent : root.palette.mid
     opacity: enabled ? 1 : .45
     activeFocusOnTab: enabled
     Accessible.role: Accessible.Button
@@ -27,7 +30,7 @@ Rectangle {
             x: 9 + (index % 2) * 5
             y: (root.height - 13) / 2 + Math.floor(index / 2) * 5
             width: 3; height: 3; radius: 1
-            color: "#b6c3cc"
+            color: root.palette.windowText
         }
     }
     Text {
@@ -35,7 +38,7 @@ Rectangle {
         x: 27; anchors.verticalCenter: parent.verticalCenter
         text: root.text
         textFormat: Text.PlainText
-        color: "#e9ecef"
+        color: root.palette.windowText
         font.pixelSize: 14
     }
     function nudge(dx, dy, event) {
@@ -70,7 +73,7 @@ Rectangle {
         onReleased: root.movementFinished()
         onCanceled: root.movementFinished()
     }
-    ToolTip.visible: dragArea.containsMouse
+    ToolTip.visible: dragArea.containsMouse && !dragArea.pressed
     ToolTip.delay: 600
     ToolTip.text: hint
 }

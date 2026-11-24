@@ -14,6 +14,7 @@ import time
 NODE = 'webcamtuner.camera'
 UNIT = 'webcamtuner-output.service'
 MAX_COMMAND = 16384
+MAX_PREVIEW_RESPONSE = 262144
 
 
 def runtime_directory():
@@ -39,15 +40,15 @@ def connect():
         raise
 
 
-def command(value):
+def command(value, response_limit=MAX_COMMAND):
     data = json.dumps(value, separators=(',', ':')).encode() + b'\n'
     if len(data) > MAX_COMMAND:
         raise ValueError('Camera command exceeds its size limit.')
     with connect() as connection:
         connection.sendall(data)
         with connection.makefile('rb') as incoming:
-            line = incoming.readline(MAX_COMMAND + 1)
-            if not line or len(line) > MAX_COMMAND:
+            line = incoming.readline(response_limit + 1)
+            if not line or len(line) > response_limit:
                 raise RuntimeError('Camera service did not return a bounded response.')
             result = json.loads(line)
             if result.get('error'):
@@ -56,7 +57,7 @@ def command(value):
 
 
 class ControlServer:
-    def __init__(self, receive, stop):
+    def __init__(self, receive, stop, background_preview=None):
         directory = runtime_directory()
         self.lock = (directory / 'camera.lock').open('a')
         try:
@@ -72,6 +73,7 @@ class ControlServer:
         self.socket.listen(8)
         self.socket.settimeout(.5)
         self.receive, self.stop = receive, stop
+        self.background_preview = background_preview
         self.condition = threading.Condition()
         self.latest = None
         self.metadata = {'state': 'starting', 'published': False, 'processed': True, 'node': NODE}
@@ -101,6 +103,8 @@ class ControlServer:
     def status(self):
         with self.condition:
             result = dict(self.metadata)
+        if self.background_preview is not None:
+            result['backgroundPreview'] = True
         if result.get('lastFrame') and time.monotonic() - result['lastFrame'] > 3:
             result.update(state='stalled', published=False)
         return result
@@ -144,6 +148,12 @@ class ControlServer:
                         continue
                     if operation == 'status':
                         result = self.status()
+                    elif operation == 'background-preview':
+                        if subscribed or self.background_preview is None:
+                            raise ValueError('Background previews are unavailable on this connection.')
+                        preview = self.background_preview(value.get('background'))
+                        self.send_bounded(connection, preview)
+                        break
                     elif operation == 'stop':
                         result = {'stopping': True}
                     else:

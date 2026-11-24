@@ -1,5 +1,6 @@
 """Exercise mirror confirmation and unsaved crop preservation."""
 import json
+import traceback
 import os
 from pathlib import Path
 import subprocess
@@ -52,6 +53,8 @@ def exercise():
     try:
         assert editor.property("mirror") is True
         evaluate("frame(2.3, 0.5, 0.5)")
+        click(editor.findChild(QObject, "cropControlsToggle"))
+        QTest.qWait(100)
         toggle = editor.findChild(QObject, "mirrorToggle")
         click(toggle)
         assert len(pending) == 1
@@ -72,7 +75,7 @@ def exercise():
         execute("read", [])
         assert editor.property("mirror") is False and editor.property("zoom") == 2.3
     except Exception as error:
-        failures.append(str(error) or type(error).__name__)
+        failures.append(traceback.format_exc())
     app.quit()
 
 QTimer.singleShot(400, exercise)

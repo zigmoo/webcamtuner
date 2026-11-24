@@ -19,7 +19,7 @@ def main():
         requested = json.loads(args.configure)
         result = command(requested)
         if args.wait_applied:
-            deadline = time.monotonic() + 12
+            deadline = time.monotonic() + (65 if requested['camera'].startswith('sshcam:') else 12)
             while time.monotonic() < deadline:
                 result = command({'operation': 'status'})
                 if result.get('failedConfigurationRevision', -1) >= requested.get('configurationRevision', 0):

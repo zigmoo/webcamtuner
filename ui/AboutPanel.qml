@@ -15,20 +15,24 @@ ScrollView {
         height: implicitHeight
         width: root.availableWidth
         spacing: 16
-        component Plain: Text { color: "#e9ecef"; textFormat: Text.PlainText; wrapMode: Text.WordWrap; Layout.fillWidth: true; font.pixelSize: 14 }
+        component Plain: Text { color: root.palette.windowText; textFormat: Text.PlainText; wrapMode: Text.WordWrap; Layout.fillWidth: true; font.pixelSize: 14 }
         RowLayout {
-            WebcamIcon { ink: "#93c5aa"; Layout.preferredWidth: 32; Layout.preferredHeight: 32 }
+            WebcamIcon { ink: root.palette.link; Layout.preferredWidth: 32; Layout.preferredHeight: 32 }
             Plain { text: "WebcamTuner"; font.pixelSize: 24; font.bold: true }
         }
-        Plain { objectName: "pluginVersion"; text: qsTr("Version %1").arg(BuildInfo.version); color: "#93c5aa" }
-        Plain { text: qsTr("By Jason Benjamin Ziegler Sr") }
+        Plain { objectName: "pluginVersion"; text: qsTr("Version %1").arg(BuildInfo.version); color: root.palette.link }
+        Plain { objectName: "aboutAuthor"; text: qsTr("By Jason B Ziegler Sr") }
         Plain { text: qsTr("Persistent camera framing and locally processed backgrounds for the Omarchy desktop.") }
         Plain { text: qsTr("How it works"); font.bold: true; font.pixelSize: 18 }
         Plain { text: qsTr("The Omarchy plugin is the control panel. It remembers your camera and saves profiles with framing, mirror and background choices in your home directory.") }
         Plain { text: qsTr("On first use, Setup checks the controller, processing runtime, bundled model, desktop video components and PipeWire session. Prepare WebcamTuner creates missing components in your home directory with visible progress; Repair local runtime builds a fresh environment while preserving profiles, backgrounds and snapshots. Preparation itself does not open a camera.") }
-        Plain { text: qsTr("A local worker captures the camera and uses person matting to blend you with a chosen image or blurred background. Snapshot saves that look at the camera crop’s full resolution in the local snapshot folder shown in Setup, with an optional OS screenshot mirror. Camera images are processed on this computer. When enabled in Setup, the NVIDIA GPU accelerates person matting; the preview reports measured FPS and its active backend.") }
+        Plain { text: qsTr("Snapshot saves the composition at the camera crop’s full resolution in the snapshot folder shown in Setup. You can also keep a copy in your system screenshots folder.") }
         Plain { text: qsTr("Start camera output runs one persistent user-session capture/compositor and publishes its background, camera crop and label through PipeWire. The editor subscribes to that same producer. Closing the controls leaves output running; Stop output releases the camera. The Test tab reads published pixels through independent PipeWire and V4L2 consumers.") }
         Plain { text: qsTr("The desktop camera adapter exposes PipeWire cameras through V4L2. Camera output automatically prepares the matching signed library in your home directory, including after PipeWire upgrades. When native Zoom is installed, its user launcher is connected automatically. An already-running Zoom process loads the new adapter when you reopen it. Setup provides repair and normal-launcher controls.") }
+        Plain { objectName: "aboutBackgroundEffects"; text: qsTr("How background effects work"); font.bold: true; font.pixelSize: 18 }
+        Plain { text: qsTr("WebcamTuner uses Robust Video Matting (MobileNetV3) on the full camera view before applying your crop. It uses information from recent frames to estimate how much of each pixel belongs to the person. Pixels along hair and other soft edges can blend with the background.") }
+        Plain { text: qsTr("The mask changes more slowly where the image is still and follows moving edges more quickly. WebcamTuner crops and moves the mask with the camera image. In Blur mode it fills behind your outline with nearby background colors before blurring to reduce ghosting.") }
+        Plain { text: qsTr("Processing runs on this computer. WebcamTuner uses NVIDIA acceleration when available, and the preview shows the active backend and measured frame rate.") }
         Plain { text: qsTr("Why no sudo is needed"); font.bold: true; font.pixelSize: 18 }
         Plain { text: qsTr("The panel, worker, settings and output service belong to your signed-in user. They use the desktop’s existing PipeWire session and camera access. WebcamTuner does not install a kernel camera driver, create a /dev/video device, or change system-wide configuration, so its setup does not require administrator privileges.") }
         Plain { text: qsTr("Current limits"); font.bold: true; font.pixelSize: 18 }
@@ -36,7 +40,14 @@ ScrollView {
         Plain { text: qsTr("WebcamTuner does not bypass browser camera permissions, camera privacy switches or missing desktop dependencies. It does not upload camera images or backgrounds, process your microphone, or join meetings for you.") }
         Plain { text: qsTr("Source and licensing"); font.bold: true; font.pixelSize: 18 }
         Plain { text: qsTr("Application source: Apache License 2.0. The bundled Robust Video Matting model is separately licensed under GPL-3.0.") }
-        Button { text: qsTr("Source on GitHub"); onClicked: Qt.openUrlExternally("https://github.com/zigmoo/webcamtuner") }
-        Plain { text: "github.com/zigmoo/webcamtuner"; color: "#93c5aa" }
+        Button {
+            hoverEnabled: true
+            ToolTip.visible: hovered
+            ToolTip.delay: 500
+            ToolTip.text: qsTr("Open the WebcamTuner project on GitHub.")
+            text: qsTr("Source on GitHub")
+            onClicked: Qt.openUrlExternally("https://github.com/zigmoo/webcamtuner")
+        }
+        Plain { text: "github.com/zigmoo/webcamtuner"; color: root.palette.link }
     }
 }

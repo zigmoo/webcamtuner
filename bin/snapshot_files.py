@@ -96,14 +96,17 @@ def mirror_snapshot(path):
 
 
 def record_recent(path):
-    """Omasnap 1.24's source/log/thumbnail contract; publish thumbnail last."""
+    """Record a snapshot on Omasnap versions with a verified recents format."""
     if os.environ.get('WEBCAMTUNER_SNAPSHOT_ROOT') and not os.environ.get('OMASNAP_RECENT_DIR'):
         return {}
     try:
+        try:
+            version = subprocess.check_output(['omasnap','--version'],text=True,timeout=3).strip()
+        except FileNotFoundError:
+            return {}
+        if not (version.startswith('omasnap 1.24.') or version == 'omasnap 1.26.2'):
+            return {}
         from PySide6.QtCore import QLockFile
-        version = subprocess.check_output(['omasnap','--version'],text=True,timeout=3).strip()
-        if not version.startswith('omasnap 1.24.'):
-            return {'recentError':'Snapshot saved; this Omasnap version does not support the verified recent-images adapter.'}
         root = Path(os.environ.get('OMASNAP_RECENT_DIR') or Path(os.environ.get('XDG_STATE_HOME') or Path.home()/'.local/state')/'Omarchy/omasnap/recent')
         root.mkdir(parents=True,exist_ok=True,mode=0o700)
         if root.is_symlink() or root.stat().st_uid != os.getuid(): raise ValueError('Recent-images folder is not user-owned.')
@@ -138,7 +141,7 @@ def record_recent(path):
             lock.unlock();pending.unlock()
         return {'recentId':recent_id,'recentThumbnail':str(root/(stem+'.thumb.png'))}
     except (OSError,ValueError,ImportError,subprocess.SubprocessError) as error:
-        return {'recentError':'Snapshot saved; could not update Omasnap recent images: '+str(error)[:200]}
+        return {'recentError':'Could not update Omasnap recent images: '+str(error)[:200]}
 
 
 def save(jpeg):

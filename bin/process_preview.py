@@ -10,6 +10,7 @@ from functools import lru_cache
 import base64
 import json
 import math
+import os
 from pathlib import Path
 import re
 import signal
@@ -30,6 +31,7 @@ sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from capture_modes import modes as device_modes
 from camera_input import SharedCameraInput
+from remote_input import RemoteCameraInput, validate_source
 _snapshot_spec = importlib.util.spec_from_file_location("webcamtuner_snapshots", Path(__file__).with_name("snapshot_files.py"))
 snapshot_files = importlib.util.module_from_spec(_snapshot_spec)
 _snapshot_spec.loader.exec_module(snapshot_files)
@@ -73,8 +75,10 @@ def validate_settings(settings: dict) -> dict:
     if not isinstance(settings.get("mirror", True), bool):
         raise ValueError("Mirror must be on or off")
     camera = settings.get("camera", "")
-    if not isinstance(camera, str) or not re.fullmatch(r"/dev/(?:video\d+|v4l/by-id/[^/]+)", camera):
-        raise ValueError("Choose a local capture camera")
+    if isinstance(camera, str) and camera.startswith('sshcam:'):
+        validate_source(camera)
+    elif not isinstance(camera, str) or not re.fullmatch(r"/dev/(?:video\d+|v4l/by-id/[^/]+)", camera):
+        raise ValueError("Choose a local or remote capture camera")
     crop = settings.get("crop", {})
     zoom, x, y = crop.get("zoom"), crop.get("centerX"), crop.get("centerY")
     if not all(isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) for v in (zoom, x, y)):
@@ -84,6 +88,11 @@ def validate_settings(settings: dict) -> dict:
     foreground = settings.get("foreground", {"x": 0, "y": 0})
     if not isinstance(foreground, dict) or any(isinstance(foreground.get(k), bool) or not isinstance(foreground.get(k), (int, float)) or not math.isfinite(foreground[k]) or not -1 <= foreground[k] <= 1 for k in ('x', 'y')):
         raise ValueError("Invalid foreground position")
+    tuning = settings.get('personMask', {'softness': 0, 'tightness': 0})
+    if (not isinstance(tuning, dict) or set(tuning) != {'softness', 'tightness'}
+            or type(tuning['softness']) is not int or not 0 <= tuning['softness'] <= 8
+            or type(tuning['tightness']) is not int or not -50 <= tuning['tightness'] <= 50):
+        raise ValueError("Invalid person mask adjustments")
     background = settings.get("background", {})
     if background.get("mode") not in ("none", "blur", "image"):
         raise ValueError("Unknown background mode")
@@ -179,6 +188,14 @@ def fit_cover(image: np.ndarray, width: int, height: int) -> np.ndarray:
     sized = cv2.resize(image, (math.ceil(image.shape[1] * scale), math.ceil(image.shape[0] * scale)))
     x, y = (sized.shape[1] - width) // 2, (sized.shape[0] - height) // 2
     return sized[y:y + height, x:x + width]
+
+
+def fit_contain(image: np.ndarray, width: int, height: int) -> np.ndarray:
+    scale = min(width / image.shape[1], height / image.shape[0])
+    w, h = max(1, round(image.shape[1] * scale)), max(1, round(image.shape[0] * scale))
+    sized = cv2.resize(image, (w, h))
+    x, y = (width - w) // 2, (height - h) // 2
+    return cv2.copyMakeBorder(sized, y, height - h - y, x, width - w - x, cv2.BORDER_CONSTANT, value=0)
 
 
 def fit_background(image: np.ndarray, width: int, height: int, crop: dict | None = None) -> np.ndarray:
@@ -289,6 +306,19 @@ class Segmenter:
         return cv2.resize(alpha, (frame.shape[1], frame.shape[0]))[..., None] if full_resolution else alpha
 
 
+def tune_matte(mask: np.ndarray, settings: dict) -> np.ndarray:
+    """Adjust the stabilized alpha edges before any composition or crop."""
+    tuning = settings.get('personMask', {})
+    tightness = tuning.get('tightness', 0)
+    softness = tuning.get('softness', 0)
+    if tightness:
+        mask = np.power(mask, 2 ** (tightness / 50))
+    if softness:
+        sigma = softness * max(mask.shape[1] / 960, mask.shape[0] / 540)
+        mask = cv2.GaussianBlur(mask, (0, 0), sigma)[..., None]
+    return mask
+
+
 def align_matte(mask, source_width, source_height, crop, width, height):
     x, y, w, h = crop_bounds(source_width, source_height, crop)
     sx, sy = mask.shape[1] / source_width, mask.shape[0] / source_height
@@ -322,19 +352,108 @@ def placed_foreground(source, matte, crop, mirror, placement, width, height):
     return image, alpha
 
 
-def composite(frame: np.ndarray, mask: np.ndarray, mode: str, background: np.ndarray | None, background_crop: dict | None = None, blur_source: np.ndarray | None = None) -> np.ndarray:
+def blurred_background(frame: np.ndarray, person_mask: np.ndarray) -> np.ndarray:
+    """Extend visible background into the person’s silhouette before blurring."""
+    height, width = frame.shape[:2]
+    size = (max(1, width // 4), max(1, height // 4))
+    small = cv2.resize(frame, size, interpolation=cv2.INTER_AREA)
+    mask = cv2.resize(person_mask, size, interpolation=cv2.INTER_AREA)
+    # Exclude mixed pixels around the matte edge as well as the person's interior.
+    covered = cv2.dilate((mask > 0.03).astype(np.uint8), None)
+    if covered.any():
+        known = covered == 0
+        if not known.any():
+            return np.zeros_like(frame)
+        _, nearest = cv2.distanceTransformWithLabels(
+            covered, cv2.DIST_L2, cv2.DIST_MASK_5, labelType=cv2.DIST_LABEL_PIXEL
+        )
+        colors = np.zeros((int(nearest.max()) + 1, 3), dtype=small.dtype)
+        colors[nearest[known]] = small[known]
+        small = colors[nearest]
+    return cv2.resize(cv2.GaussianBlur(small, (0, 0), 4.5), (width, height))
+
+
+def composite(frame: np.ndarray, mask: np.ndarray, mode: str, background: np.ndarray | None,
+              background_crop: dict | None = None, *, blur_source: np.ndarray | None = None,
+              blur_mask: np.ndarray | None = None) -> np.ndarray:
     if mode == "none":
         return frame
     if mode == "blur":
         base = frame if blur_source is None else blur_source
-        small = cv2.resize(base, (max(1, base.shape[1] // 4), max(1, base.shape[0] // 4)))
-        backdrop = cv2.resize(cv2.GaussianBlur(small, (0, 0), 4.5), (frame.shape[1], frame.shape[0]))
+        base_mask = mask if blur_mask is None else blur_mask
+        backdrop = blurred_background(base, base_mask)
     else:
         backdrop = fit_background(background, frame.shape[1], frame.shape[0], background_crop)
     alpha = cv2.cvtColor(mask.astype(np.float32, copy=False), cv2.COLOR_GRAY2BGR)
     foreground = cv2.multiply(frame, alpha, dtype=cv2.CV_32F)
     background_part = cv2.multiply(backdrop, 1 - alpha, dtype=cv2.CV_32F)
     return cv2.add(foreground, background_part, dtype=cv2.CV_8U)
+
+
+class BackgroundPreview:
+    """Render a private, low-rate view from the publisher's latest source frame."""
+    def __init__(self):
+        self.source = None
+        self.lock = threading.Lock()
+        self.backdrop = None
+        self.backdrop_key = None
+        self.segmenter = None
+        self.segmenter_camera = None
+        self.last_matte_at = 0
+
+    def render(self, background):
+        if not self.lock.acquire(blocking=False):
+            return {'pending': True}
+        try:
+            return self._render(background)
+        except cv2.error as error:
+            raise RuntimeError('Could not render the background preview.') from error
+        finally:
+            self.lock.release()
+
+    def _render(self, background):
+        source = self.source
+        if source is None:
+            return {'pending': True}
+        if not isinstance(background, dict) or background.get('mode') != 'image':
+            raise ValueError('Choose an image from the background library.')
+        frame, matte, active_settings = source
+        settings = validate_settings({**active_settings, 'background': background})
+        path = image_path(background['imagePath']).resolve()
+        library = (Path(os.environ.get('XDG_DATA_HOME') or Path.home() / '.local/share')
+                   / 'webcamtuner' / 'backgrounds').resolve()
+        if not path.is_relative_to(library):
+            raise ValueError('Choose an image from the background library.')
+        key = (path, path.stat().st_mtime_ns)
+        if key != self.backdrop_key:
+            self.backdrop = load_background(str(path))
+            self.backdrop_key = key
+        if matte is None:
+            if self.segmenter is None:
+                self.segmenter = Segmenter()
+            now = time.monotonic()
+            if self.segmenter_camera != settings['camera'] or now - self.last_matte_at > 1:
+                self.segmenter.reset()
+                self.segmenter_camera = settings['camera']
+            matte = tune_matte(self.segmenter.mask(frame, full_resolution=False), settings)
+            self.last_matte_at = now
+        source_height, source_width = frame.shape[:2]
+        cropped = crop_frame(frame, settings['crop'], 480, 270)
+        height, width = cropped.shape[:2]
+        placement = settings.get('foreground', {})
+        if placement.get('x', 0) or placement.get('y', 0):
+            foreground, alpha = placed_foreground(frame, matte, settings['crop'], False, placement, width, height)
+        else:
+            foreground = cropped
+            alpha = align_matte(matte, source_width, source_height, settings['crop'], width, height)
+        scene = composite(foreground, alpha, 'image', self.backdrop, background.get('crop'))
+        fit = fit_contain if settings['camera'].startswith('sshcam:') else fit_cover
+        scene = fit(scene, 480, 270)
+        okay, encoded = cv2.imencode('.jpg', finish_composite(scene, settings),
+                                     [cv2.IMWRITE_JPEG_QUALITY, 72])
+        if not okay:
+            raise RuntimeError('Could not encode the background preview.')
+        return {'frame': base64.b64encode(encoded).decode('ascii')}
 
 
 def emit(value: dict) -> None:
@@ -355,12 +474,13 @@ def save_processed_snapshot(frame, matte, settings, background):
         if matte is None:
             raise ValueError('The processed image is not ready for a snapshot.')
         alpha = align_matte(matte, w, h, settings['crop'], cw, ch)
-    base = full
+    base, base_alpha = full, alpha
     placement = settings.get('foreground', {'x':0, 'y':0})
     if placement.get('x', 0) or placement.get('y', 0):
         full, alpha = placed_foreground(frame, matte, settings['crop'], False, placement, cw, ch)
     if mode != 'none':
-        full = composite(full, alpha, mode, background, settings['background'].get('crop'), base)
+        full = composite(full, alpha, mode, background, settings['background'].get('crop'),
+                         blur_source=base, blur_mask=base_alpha)
     full = finish_composite(full, settings)
     okay, encoded = cv2.imencode('.jpg', full, [cv2.IMWRITE_JPEG_QUALITY, 96])
     if not okay:
@@ -371,11 +491,15 @@ def save_processed_snapshot(frame, matte, settings, background):
 
 class CameraCapture:
     """One latest-frame reader of the shared PipeWire camera."""
-    def __init__(self, camera):
-        selected = choose_capture_mode(device_modes(camera))
-        self.capture = SharedCameraInput(camera, selected)
+    def __init__(self, camera, cancel=None):
+        self.stopping = cancel if cancel is not None else threading.Event()
+        remote = camera.startswith('sshcam:')
+        if remote:
+            self.capture = RemoteCameraInput(camera, self.stopping)
+        else:
+            selected = choose_capture_mode(device_modes(camera))
+            self.capture = SharedCameraInput(camera, selected)
         self.condition = threading.Condition()
-        self.stopping = threading.Event()
         self.frame, self.sequence, self.error = None, 0, None
         self.last_frame_at = time.monotonic()
         self.reader = None
@@ -383,7 +507,7 @@ class CameraCapture:
             self.fps = self.capture.fps
             self.reader = threading.Thread(target=self.grab, daemon=True)
             self.reader.start()
-            self.next(0, timeout=3)
+            self.next(0, timeout=15 if remote else 3)
         except BaseException:
             self.close()
             raise
@@ -429,6 +553,46 @@ class CameraCapture:
             self.capture.release()
 
 
+class CameraReplacement:
+    """Prepare a slow SSH source without interrupting the current publisher."""
+    def __init__(self, settings):
+        self.settings = settings
+        self.ready = threading.Event()
+        self.lock = threading.Lock()
+        self.cancelled = False
+        self.cancellation = threading.Event()
+        self.capture, self.error = None, None
+        threading.Thread(target=self.prepare, daemon=True).start()
+
+    def prepare(self):
+        try:
+            capture = CameraCapture(self.settings['camera'], cancel=self.cancellation)
+            with self.lock:
+                if self.cancelled:
+                    capture.close()
+                else:
+                    self.capture = capture
+        except Exception as error:
+            self.error = str(error)
+        finally:
+            self.ready.set()
+
+    def take(self):
+        with self.lock:
+            if self.error:
+                raise RuntimeError(self.error)
+            capture, self.capture = self.capture, None
+            return capture
+
+    def cancel(self):
+        self.cancellation.set()
+        with self.lock:
+            self.cancelled = True
+            if self.capture:
+                self.capture.close()
+                self.capture = None
+
+
 def run(initial: dict, frame_limit: int = 0, ui_overlay: bool = False, publish: bool = False) -> None:
     global OUTPUT_HOOK
     cv2.setNumThreads(2)
@@ -439,9 +603,14 @@ def run(initial: dict, frame_limit: int = 0, ui_overlay: bool = False, publish: 
     guard = threading.Lock()
     alive = threading.Event()
     alive.set()
-    signal.signal(signal.SIGTERM, lambda *_: alive.clear())
-    signal.signal(signal.SIGINT, lambda *_: alive.clear())
+    shutdown = threading.Event()
+    def stop_capture(*_):
+        shutdown.set()
+        alive.clear()
+    signal.signal(signal.SIGTERM, stop_capture)
+    signal.signal(signal.SIGINT, stop_capture)
     server, publisher = None, None
+    background_preview = BackgroundPreview() if publish else None
 
     def receive(value):
         if value.get('operation') == 'snapshot':
@@ -458,7 +627,7 @@ def run(initial: dict, frame_limit: int = 0, ui_overlay: bool = False, publish: 
 
     if publish:
         from camera_stream import ControlServer, Publisher
-        server = ControlServer(receive, alive.clear)
+        server = ControlServer(receive, alive.clear, background_preview.render)
         OUTPUT_HOOK = server.emit
         ui_overlay = True
 
@@ -487,8 +656,9 @@ def run(initial: dict, frame_limit: int = 0, ui_overlay: bool = False, publish: 
     background = load_background(current["background"]["imagePath"]) if current["background"]["mode"] == "image" else None
     segmenter = Segmenter() if current["background"]["mode"] != "none" else None
     capture = None
+    preparation = None
     try:
-        capture = CameraCapture(current['camera'])
+        capture = CameraCapture(current['camera'], cancel=shutdown) if current['camera'].startswith('sshcam:') else CameraCapture(current['camera'])
         source_fps = capture.fps
         target_fps = min(30, source_fps) if source_fps > 0 else 30
         if not publish:
@@ -503,6 +673,26 @@ def run(initial: dict, frame_limit: int = 0, ui_overlay: bool = False, publish: 
             began = time.monotonic()
             with guard:
                 update = updates.pop() if updates else None
+            prepared_capture = None
+            if update is not None and preparation is not None:
+                if update['camera'] == preparation.settings['camera']:
+                    preparation.settings = update
+                    update = None
+                else:
+                    preparation.cancel()
+                    preparation = None
+            if update is not None and update['camera'] != current['camera'] and update['camera'].startswith('sshcam:'):
+                preparation = CameraReplacement(update)
+                update = None
+            if preparation is not None and preparation.ready.is_set():
+                update = preparation.settings
+                try:
+                    prepared_capture = preparation.take()
+                except RuntimeError as error:
+                    configuration_error = {'configurationError': str(error)[:500], 'failedConfigurationRevision': update.get('configurationRevision', 0)}
+                    emit({**configuration_error, 'camera': current['camera'], 'retainedPreviousEffect': True})
+                    update = None
+                preparation = None
             if update is not None:
                 try:
                     candidate = load_background(update["background"]["imagePath"]) if update["background"]["mode"] == "image" else None
@@ -511,7 +701,7 @@ def run(initial: dict, frame_limit: int = 0, ui_overlay: bool = False, publish: 
                     if update['camera'] != current['camera']:
                         # Prove the new source delivers frames before releasing the old one.
                         # Publisher and its PipeWire node survive the source change.
-                        replacement = CameraCapture(update['camera'])
+                        replacement = prepared_capture or CameraCapture(update['camera'])
                         previous, capture = capture, replacement
                         previous.close()
                         last_sequence = 0
@@ -525,6 +715,8 @@ def run(initial: dict, frame_limit: int = 0, ui_overlay: bool = False, publish: 
                     current, background = update, candidate
                     configuration_error = {}
                 except (ValueError, OSError, RuntimeError, subprocess.SubprocessError) as error:
+                    if prepared_capture is not None and prepared_capture is not capture:
+                        prepared_capture.close()
                     configuration_error = {'configurationError': str(error)[:500], 'failedConfigurationRevision': update.get('configurationRevision', 0)}
                     emit({**configuration_error, 'camera': current['camera'], 'retainedPreviousEffect': True})
             frame, sequence = capture.next(last_sequence)
@@ -540,23 +732,25 @@ def run(initial: dict, frame_limit: int = 0, ui_overlay: bool = False, publish: 
             if mode != "none":
                 # Detect the person in the full camera view. Tight user crops can otherwise
                 # remove the shoulders/context the model needs to classify a head correctly.
-                alpha = segmenter.mask(frame, full_resolution=False)
+                alpha = tune_matte(segmenter.mask(frame, full_resolution=False), current)
                 matte = alpha
                 matte_ms = (time.monotonic() - captured) * 1000
                 frame = crop_frame(frame, current["crop"], 1280 if publish else 960, 720 if publish else 540)
                 alpha = align_matte(alpha, source_width, source_height, current["crop"], frame.shape[1], frame.shape[0])
-                base = frame
+                base, base_alpha = frame, alpha
                 placement = current.get('foreground', {'x':0, 'y':0})
                 if placement.get('x', 0) or placement.get('y', 0):
                     frame, alpha = placed_foreground(full_frame, matte, current['crop'], False, placement, frame.shape[1], frame.shape[0])
-                frame = composite(frame, alpha, mode, background, current["background"].get("crop"), base)
+                frame = composite(frame, alpha, mode, background, current["background"].get("crop"),
+                                  blur_source=base, blur_mask=base_alpha)
             else:
                 frame = crop_frame(frame, current["crop"], 1280 if publish else 960, 720 if publish else 540)
                 placement = current.get('foreground', {'x':0, 'y':0})
                 if placement.get('x', 0) or placement.get('y', 0):
                     frame, _ = placed_foreground(full_frame, None, current['crop'], False, placement, frame.shape[1], frame.shape[0])
             if publisher is not None:
-                frame = fit_cover(frame, 1280, 720)
+                background_preview.source = (full_frame, matte, current)
+                frame = (fit_contain if current['camera'].startswith('sshcam:') else fit_cover)(frame, 1280, 720)
                 publisher.push(finish_composite(frame, current))
                 frame = cv2.resize(frame, (960, 540))
             # The editor adds its editable label to this canonical scene, then
@@ -597,7 +791,7 @@ def run(initial: dict, frame_limit: int = 0, ui_overlay: bool = False, publish: 
                         source_record.update(labelBitmap=base64.b64encode(png).decode('ascii'),labelKey=json.dumps(key),labelWidth=color.shape[1],labelHeight=color.shape[0])
                         last_label_style=key
             if current.get('sourcePreview', False):
-                source_image = cv2.resize(full_frame, (960,540))
+                source_image = crop_frame(full_frame, {'zoom': 1, 'centerX': .5, 'centerY': .5}, 960, 540)
                 if current.get('mirror',True): source_image = cv2.flip(source_image,1)
                 source_ok, source_jpeg = cv2.imencode('.jpg', source_image, [cv2.IMWRITE_JPEG_QUALITY,82])
                 if source_ok: source_record['sourceFrame'] = base64.b64encode(source_jpeg).decode('ascii')
@@ -615,6 +809,8 @@ def run(initial: dict, frame_limit: int = 0, ui_overlay: bool = False, publish: 
             time.sleep(max(0, 1 / target_fps - (time.monotonic() - began)))
     finally:
         alive.clear()
+        if preparation is not None:
+            preparation.cancel()
         if publisher is not None:
             publisher.close()
         if server is not None:

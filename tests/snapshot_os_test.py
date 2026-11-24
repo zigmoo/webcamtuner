@@ -22,13 +22,15 @@ class SnapshotOS(unittest.TestCase):
   os.environ['XDG_STATE_HOME']=str(self.root/'state');os.environ.pop('OMASNAP_RECENT_DIR',None)
   expected=Path(QStandardPaths.writableLocation(QStandardPaths.StateLocation))/'recent'
   data=io.BytesIO();Image.new('RGB',(80,60),'blue').save(data,'JPEG');path=snapshots.save(data.getvalue())
-  result=snapshots.mirror_snapshot(path);self.assertNotIn('recentError',result)
+  with patch.object(snapshots.subprocess,'check_output',return_value='omasnap 1.24.0\n'):
+   result=snapshots.mirror_snapshot(path)
   self.assertEqual(Path(result['recentThumbnail']).parent,expected)
  def test_newest_private_recent_document_reopens_the_saved_pixels(self):
   data=io.BytesIO();Image.new('RGB',(640,360),'#246080').save(data,'JPEG')
   path=snapshots.save(data.getvalue());self.assertEqual(path.parent,self.root/'data/webcamtuner/snapshots')
-  previous=snapshots.mirror_snapshot(path);self.assertNotIn('recentError',previous)
-  latest=snapshots.mirror_snapshot(path);self.assertNotIn('recentError',latest)
+  with patch.object(snapshots.subprocess,'check_output',return_value='omasnap 1.26.2\n'):
+   previous=snapshots.mirror_snapshot(path)
+   latest=snapshots.mirror_snapshot(path)
   thumbs=sorted((self.root/'recent').glob('*.thumb.png'),reverse=True)
   self.assertEqual(str(thumbs[0]),latest['recentThumbnail'])
   stem=thumbs[0].name.removesuffix('.thumb.png')
@@ -37,6 +39,13 @@ class SnapshotOS(unittest.TestCase):
   with Image.open(self.root/'recent'/(stem+'.png')) as source: self.assertEqual(source.size,(640,360));self.assertLess(abs(source.getpixel((20,20))[0]-36),3)
   self.assertTrue(all(p.stat().st_mode&0o777==0o600 for p in (self.root/'recent').iterdir() if p.is_file()))
   self.assertFalse(list((self.root/'recent').glob('*.partial')))
+ def test_newer_unknown_version_still_mirrors_the_snapshot(self):
+  data=io.BytesIO();Image.new('RGB',(80,60),'blue').save(data,'JPEG');path=snapshots.save(data.getvalue())
+  with patch.object(snapshots.subprocess,'check_output',return_value='omasnap 1.99.0\n'):
+   result=snapshots.mirror_snapshot(path)
+  self.assertEqual(result,{'mirrored':True,'mirrorPath':str(self.root/'OS shots'/(path.stem+'.png'))})
+  self.assertTrue(Path(result['mirrorPath']).is_file())
+  self.assertFalse((self.root/'recent').exists())
  def test_disabling_mirror_keeps_only_the_local_original(self):
   snapshots.save_settings(False);self.assertFalse(snapshots.read_settings()['mirrorToOS'])
   data=io.BytesIO();Image.new('RGB',(80,60),'blue').save(data,'JPEG');path=snapshots.save(data.getvalue())

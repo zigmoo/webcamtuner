@@ -283,3 +283,17 @@ Zoom-first launch order also runs the same preparation owner before exec, with a
 ## Paired Test previews — v0.9.13, DIL-3469
 
 PipeWire and V4L2 readbacks remain in two equal columns throughout the supported window range, including the default780px and minimum540px palette. The former760px available-width breakpoint stacked the cards after padding was deducted from the default window and contradicted the operator's comparison preference. Keep text wrapping and the existing full-height vertical scrollbar; do not switch the consumer cards into a vertical stack. A resize regression checks both card positions, widths, viewport containment and access to acceptance text at540/780/1100px. Output transport and independent consumer lifetimes are unchanged.
+## Remote cameras — version 0.10.0 (DIL-3498)
+
+In Setup → General, enable **Show Remotes tab**. Open Remotes, select a computer, and choose its camera and quality. Refresh and Inspect cameras discover devices. Connect camera explicitly starts video. Auto prefers an advertised smooth mode and preserves aspect ratio. Streams are capped at 1280x720. The microphone stays off; remote audio routing is not part of this release.
+
+Connect opens a processed preview. Start Camera publishes the composed feed to apps. If output is already running, a new source is prepared in the background and replaces the old source only after it delivers frames. A failed connection retains the previous live source. Cancel connection cancels a pending replacement; Disconnect stops the remote source and its shared output. Closing a preview releases its capture; an explicitly started camera output retains the existing background-output lifecycle.
+
+SSH capture is owned by webcam_tool through its supported stream-plan schema 1 interface. WebcamTuner decodes that video into the existing compositor, so framing, backgrounds, snapshots and camera output share the same processing path as local sources. Stream plans never open cameras. The consumer maintains heartbeat stdin, and EOF or a 12-second remote timeout releases capture after process/network loss. Discovery does not change remote profiles or select a microphone. No public listening port, persistent remote server or media recording is created.
+
+Remote sources are saved with host plus a stable camera identity when Linux exposes by-id. They never silently follow a portable camera to a different host or reconnect automatically on panel open. Connect or Start Camera is explicit. macOS source enumeration is available, but its live capture remains unverified; do not treat Linux test results as macOS acceptance.
+
+Verification: both DIL-3494 removable Logitechs delivered fresh SSH video. A separate test publisher switched between them, retained the old source after a missing-camera request and switched back. Two independent PipeWire consumers received changing frames without replacing the publisher. Production camera output and profiles were not used as test fixtures. See task evidence for measured rates, startup time, gaps, checks and remaining platform limits.
+## Remotes navigation — 0.10.1
+
+Remotes is off by default and appears immediately before About when enabled. Browsing the tab leaves the current camera and live output in place until you explicitly connect. Developer UI tests cover discovery, source selection and navigation. The opt-in live test in `tests/remote_compositor_live.py` takes two test hosts and device paths through its environment variables and uses a separate publisher.

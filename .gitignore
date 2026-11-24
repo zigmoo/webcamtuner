@@ -2,4 +2,6 @@ node_modules/
 dist/
 package/
 *.png
+!assets/readme/sunset-composite.png
+!assets/readme/camera-tab-preview.png
 __pycache__/

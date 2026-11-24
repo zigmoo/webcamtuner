@@ -70,9 +70,24 @@ finished=False
 def exercise():
     global finished
     try:
+        ev('labelDisclosure.expanded=true')
+        QTest.qWait(150)
         stage = find(editor,'cameraCompositionStage')
         layer = find(editor,'cameraCompositionLayer')
         label = find(editor,'interactivePreviewLabel')
+        grip = find(editor,'labelMoveHandle')
+        checkbox = find(editor,'showPreviewLabel')
+        handles = find(editor,'previewLabelMoveHandles')
+        assert grip.property('text') == 'Drag Label'
+        assert grip.mapToScene(QPointF(grip.width(), grip.height()/2)).x() <= checkbox.mapToScene(QPointF()).x()
+        assert abs(grip.mapToScene(QPointF(0, grip.height()/2)).y() -
+                   checkbox.mapToScene(QPointF(0, checkbox.height()/2)).y()) <= 1
+        grip_center = grip.mapToScene(QPointF(grip.width()/2, grip.height()/2)).toPoint()
+        stage_center = stage.mapToScene(QPointF(stage.width()/2, stage.height()/2)).toPoint()
+        QTest.mouseMove(view, grip_center)
+        assert handles.isVisible()
+        QTest.mouseMove(view, stage_center)
+        assert not handles.isVisible()
         # The real background, foreground and label all belong to one transform.
         assert find(editor,'backgroundImage').parentItem() == layer
         assert label.parentItem().parentItem() == layer
@@ -87,6 +102,27 @@ def exercise():
             drag(find(editor,'previewLabelDrag'),45,-10)
             after = label.mapToScene(QPointF(label.width()/2,label.height()/2)).x()
             assert abs(after-before-45) < 3, (mirror,before,after)
+            QTest.mouseClick(view, Qt.LeftButton, Qt.NoModifier, grip_center)
+            QTest.mouseMove(view, stage_center)
+            assert handles.isVisible()
+            direct = find(editor,'previewLabelPositionDrag')
+            drag(direct, 24, 8)
+            assert abs(label.mapToScene(QPointF(label.width()/2,label.height()/2)).x()-after-24) < 3
+            corner = find(editor,'previewLabelResize-3')
+            old_size = ev('backgroundLabelOverlay.fontSize')
+            old_width = label.width()
+            anchor = label.mapToScene(QPointF())
+            drag(corner, 30*sign, 14)
+            assert ev('backgroundLabelOverlay.fontSize') > old_size
+            assert label.width() > old_width
+            assert (label.mapToScene(QPointF())-anchor).manhattanLength() < 2
+            ev('editLabel({fontSize:.06})')
+            disclosure = find(editor,'labelDisclosure')
+            inside = disclosure.mapToScene(QPointF(disclosure.width()-3, disclosure.height()-3)).toPoint()
+            QTest.mouseClick(view, Qt.LeftButton, Qt.NoModifier, inside)
+            assert handles.isVisible()
+            QTest.mouseClick(view, Qt.LeftButton, Qt.NoModifier, stage_center)
+            assert not handles.isVisible()
             # Camera translation follows the same screen direction in either mode.
             drag(find(editor,'cameraMoveDrag'),40,0)
             assert abs(ev('foreground.x')*stage.width()*sign-40) < 3
@@ -116,14 +152,14 @@ def exercise():
         mirrored = capture(True,'mirrored.png')
         diff = ImageStat.Stat(ImageChops.difference(normal.transpose(Image.Transpose.FLIP_LEFT_RIGHT),mirrored))
         assert max(diff.mean) < 4, diff.mean
-        ev('cropTool.openEditor()')
+        ev('cropTool.target="background";cropTool.openEditor()')
         app.processEvents()
-        crop_layer = find(view.contentItem(),'cropCompositionLayer')
-        assert crop_layer
-        assert crop_layer.mapToScene(QPointF(1,0)).x() < crop_layer.mapToScene(QPointF(0,0)).x()
+        original_image = find(view.contentItem(),'cropOriginalImage')
+        assert original_image
+        assert original_image.mapToScene(QPointF(1,0)).x() > original_image.mapToScene(QPointF(0,0)).x()
         ev('cropTool.closeEditor()')
         finished = True
-        print('PASS: whole-scene preview pixels; camera/background/label drags follow pointer in both modes; label editor readable; crop composite reflected')
+        print('PASS: whole-scene preview pixels; camera/background/label drags follow pointer in both modes; label editor readable; original image stays unmirrored in the crop dialog')
     except Exception:
         errors.append(traceback.format_exc())
     app.quit()

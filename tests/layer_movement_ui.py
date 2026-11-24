@@ -79,6 +79,8 @@ finished=False
 
 def exercise():
     try:
+        ev('labelDisclosure.expanded=true')
+        QTest.qWait(150)
         stage=find(editor,'cameraCompositionStage')
         for mirror in (False,True):
             editor.setProperty('mirror',mirror)
@@ -102,12 +104,24 @@ def exercise():
             assert (after['background']['centerX']-.5)*sign<0
             assert after['background']['centerY']>.5
             assert ev('cropTool.target')=='camera'
+            direct=find(editor,'previewBackgroundDrag')
+            assert direct.property('enabled'), 'Grabbing Background should also enable panning the image'
+            photo=find(editor,'backgroundImage')
+            before=state()
+            drag('previewBackgroundDrag',24,12)
+            after=state()
+            assert after['background']['zoom']==before['background']['zoom']==2
+            assert abs((before['background']['centerX']-after['background']['centerX'])*sign*photo.width()-24)<3
+            assert abs((before['background']['centerY']-after['background']['centerY'])*photo.height()-12)<3
+            assert after['camera']==before['camera'] and after['label']==before['label'] and after['cameraCrop']==before['cameraCrop']
+            assert ev('cropTool.target')=='camera' and not ev('cropTool.sourcePreviewRequested')
             before=state()
             drag('previewLabelDrag',50,-15,refresh=True)
             after=state()
             assert after['camera']==before['camera'] and after['background']==before['background'] and after['cameraCrop']==before['cameraCrop']
             assert (after['label']['x']-.4)*sign>0 and after['label']['y']<.7
-            # Empty-image dragging is deliberately inert; each grip has one target.
+            # Selecting a different layer releases the direct background gesture.
+            assert not direct.property('enabled')
             before=state()
             drag('cameraCompositionStage',20,-5)
             assert state()==before
@@ -118,22 +132,51 @@ def exercise():
         QTest.keyClick(view,Qt.Key_Right)
         assert state()['camera']['x']<before['camera']['x']
         assert state()['background']==before['background'] and state()['label']==before['label']
+        before=state()
+        drag('quickPreviewLabelDrag',-30,10)
+        after=state()
+        assert after['label']['x']>before['label']['x'] and after['label']['y']>before['label']['y']
+        assert after['camera']==before['camera'] and after['background']==before['background']
         assert all(find(editor,name).height()>=36 for name in ('cameraMoveDrag','backgroundMoveDrag','previewLabelDrag'))
         ev('editLabel({enabled:false})')
         app.processEvents()
         assert not find(editor,'labelMoveHandle').isEnabled()
         assert not find(editor,'interactivePreviewLabel').isVisible()
         ev('editLabel({enabled:true})')
-        QTimer.singleShot(1800,verify)
+        editor.setProperty('previewOn',True)
+        QTest.qWait(100)
+        fps=find(editor,'previewFpsIndicator')
+        backend=find(editor,'previewBackendIndicator')
+        assert fps.isVisible() and backend.isVisible()
+        handle=find(editor,'cameraMoveDrag')
+        start=handle.mapToScene(QPointF(handle.width()/2,handle.height()/2)).toPoint()
+        QTest.mouseMove(view,start)
+        ev('ToolTip.show("Drag test", 2000)')
+        QTest.mousePress(view,Qt.LeftButton,Qt.NoModifier,start)
+        QTest.mouseMove(view,start+QPointF(12,0).toPoint(),40)
+        app.processEvents()
+        assert ev('draggingComposition')
+        assert fps.property('active') and not fps.isVisible() and not backend.isVisible()
+        assert ev('ToolTip.toolTip.opacity')==0
+        QTest.mouseMove(view,start,40)
+        assert not fps.isVisible()
+        QTest.mouseRelease(view,Qt.LeftButton,Qt.NoModifier,start)
+        app.processEvents()
+        assert fps.isVisible() and backend.isVisible() and ev('ToolTip.toolTip.opacity')==1
+        QTimer.singleShot(200,verify)
     except Exception:
         errors.append(traceback.format_exc())
         app.quit()
 
-def verify():
+def verify(attempt=0):
     global finished
     try:
+        profile_file=scratch/'config/profiles.json'
+        if attempt<30 and (editor.property('dirty') or editor.property('busy') or not profile_file.exists()):
+            QTimer.singleShot(150,lambda:verify(attempt+1))
+            return
         current=state()
-        store=json.loads((scratch/'config/profiles.json').read_text())
+        store=json.loads(profile_file.read_text())
         profile=store['profiles'][0]
         assert profile['foreground']==current['camera']
         assert profile['background']['crop']==current['background']
@@ -141,7 +184,7 @@ def verify():
         assert not editor.property('dirty') and not editor.property('busy')
         assert view.grabWindow().save(str(Path(os.environ['WEBCAMTUNER_TEST_ROOT'])/'independent-layer-handles.png'))
         finished=True
-        print('PASS: independent camera/background/label grips; opposite crop selection; both mirror modes; 36px hit targets; held drag across refresh/save; keyboard precision; automatic storage readback')
+        print('PASS: direct preview background pan; independent camera/background/label grips; opposite crop selection; both mirror modes; 36px hit targets; held drag across refresh/save; keyboard precision; automatic storage readback')
     except Exception:errors.append(traceback.format_exc())
     app.quit()
 

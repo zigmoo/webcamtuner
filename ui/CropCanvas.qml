@@ -4,7 +4,7 @@ import QtQuick.Controls
 Rectangle {
     id: root
     objectName: "backgroundCropCanvas"
-    color: "#0e131b"
+    color: root.palette.base
     clip: true
     property url imageSource
     property var crop: ({zoom: 1, centerX: 0.5, centerY: 0.5})
@@ -13,6 +13,8 @@ Rectangle {
     property bool hasFrame: false
     property real frameAspect: 16 / 9
     property bool streamSource: false
+    readonly property bool dragging: newSelection.pressed || moveSelection.pressed || resizeHandle !== null
+    property MouseArea resizeHandle: null
     property string loadingText: qsTr("Loading image…")
     onImageSourceChanged: {
         var stream=imageSource.toString().indexOf("data:image/")===0
@@ -68,6 +70,7 @@ Rectangle {
         }
     }
     MouseArea {
+        id: newSelection
         objectName: "cropNewSelection"
         anchors.fill: parent
         enabled: root.hasFrame && !root.locked
@@ -111,6 +114,7 @@ Rectangle {
             Rectangle { required property real modelData; y: selected.height * modelData; height: 1; width: selected.width; color: "#88ffffff" }
         }
         MouseArea {
+            id: moveSelection
             objectName: "cropMoveSelection"
             anchors.fill: parent
             enabled: root.hasFrame && !root.locked
@@ -137,6 +141,7 @@ Rectangle {
             color: "#e9ecef"; border.color: "#284c44"
             visible: root.hasFrame && !root.locked
             MouseArea {
+                id: resizeGrip
                 objectName: "cropHandle-" + parent.modelData.name
                 anchors.fill: parent; anchors.margins: -6
                 preventStealing: true
@@ -144,6 +149,10 @@ Rectangle {
                     : parent.modelData.x === parent.modelData.y ? Qt.SizeFDiagCursor : Qt.SizeBDiagCursor
                 property point startPointer
                 property rect startRect
+                onPressedChanged: {
+                    if (pressed) root.resizeHandle = resizeGrip
+                    else if (root.resizeHandle === resizeGrip) root.resizeHandle = null
+                }
                 onPressed: function(mouse) { startPointer = mapToItem(root, mouse.x, mouse.y); startRect = root.selection }
                 onPositionChanged: function(mouse) {
                     if (!pressed) return
@@ -158,6 +167,6 @@ Rectangle {
         anchors.centerIn: parent
         visible: !root.hasFrame
         text: photo.status === Image.Error ? qsTr("Cannot load this image") : root.loadingText
-        color: "#e9ecef"
+        color: root.palette.windowText
     }
 }

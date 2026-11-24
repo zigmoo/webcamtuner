@@ -25,6 +25,10 @@ export const profileSchema = z.object({
     }).strict().optional(),
   }).strict(),
   foreground: z.object({ x: z.number().finite().min(-1).max(1), y: z.number().finite().min(-1).max(1) }).strict().optional(),
+  personMask: z.object({
+    softness: z.number().int().min(0).max(8),
+    tightness: z.number().int().min(-50).max(50),
+  }).strict().optional(),
   mirror: z.boolean().default(true),
   autostartCamera: z.boolean().default(true),
   restoreOnStart: z.boolean(),

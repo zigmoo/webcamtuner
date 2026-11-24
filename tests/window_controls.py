@@ -50,8 +50,29 @@ ShellRoot {
     w.openEditor()
    } else if (phase === 4) {
     expect(w.visible && !w.collapsed, "bar recall restores full window")
-    w.closeEditor()
-    console.log("PASS: real window collapse/expand preserves geometry, preview and draft; close stops preview; recall expands")
+    var nameField = pointer.findChild(w.editor, "profileName")
+    nameField.forceActiveFocus()
+    nameField.selectAll()
+    pointer.keyClick(Qt.Key_Q)
+    expect(w.visible && nameField.text.toLowerCase() === "q", "Q stays available in text input")
+    pointer.keyClick(Qt.Key_Escape)
+   } else if (phase === 5) {
+    expect(!w.visible, "Escape closes with focus in a text field")
+    w.openEditor()
+    var tabs = pointer.findChild(w.contentItem, "navigationTabs")
+    tabs.currentIndex = tabs.count - 1
+    tabs.itemAt(tabs.currentIndex).forceActiveFocus()
+   } else if (phase === 6) {
+    pointer.keyClick(Qt.Key_Q)
+   } else if (phase === 7) {
+    expect(!w.visible, "Q closes with focus outside the editor")
+    w.openEditor()
+    w.toggleCollapse()
+   } else if (phase === 8) {
+    pointer.keyClick(Qt.Key_Escape)
+   } else if (phase === 9) {
+    expect(!w.visible, "Escape closes the collapsed window")
+    console.log("PASS: real window collapse/expand preserves geometry, preview and draft; Q and Escape close")
     Qt.quit()
    }
    phase++
@@ -65,4 +86,4 @@ output = result.stdout + result.stderr
 if result.returncode or 'PASS: real window collapse/expand' not in output:
     print(output[-4000:])
     raise SystemExit('Window controls failed')
-print('PASS: real palette collapse/expand retains geometry, preview and draft; close stops preview; recall expands')
+print('PASS: real palette controls, Q and Escape close, and text fields retain Q')

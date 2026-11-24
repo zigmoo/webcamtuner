@@ -29,6 +29,17 @@ test('an old panel cannot overwrite a newer profile', t => {
   assert.throws(() => saveStore(original, path), /another panel/)
   assert.equal(readFileSync(path, 'utf8'), before)
 })
+test('person mask settings are optional, bounded, and saved per profile', t => {
+  const path = fixture(t), store = defaults()
+  assert.equal(store.profiles[0].personMask, undefined)
+  store.profiles[0].personMask = { softness: 4, tightness: -20 }
+  const saved = saveStore(store, path)
+  assert.deepEqual(readStore(path).profiles[0].personMask, { softness: 4, tightness: -20 })
+  const invalid = structuredClone(saved)
+  invalid.profiles[0].personMask.tightness = 51
+  assert.throws(() => saveStore(invalid, path))
+  assert.deepEqual(readStore(path), saved)
+})
 test('small background crops and optional overlays round-trip without changing camera limits', t => {
   const path = fixture(t), store = defaults()
   store.profiles[0].background = { mode: 'image', imagePath: '/private/background.png',

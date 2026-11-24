@@ -62,10 +62,11 @@ def exercise():
             stage = 1
         elif stage == 1 and editor.property("imageReady"):
             assert editor.property("backgroundMode") == "image"
-            assert "Image loaded" in editor.property("backgroundFeedback")
+            assert editor.property("backgroundFeedback") == ""
             evaluate("save()")
             document = json.loads((scratch / "background-ui-profiles" / "profiles.json").read_text())
-            assert document["profiles"][0]["background"] == {"mode": "image", "imagePath": str(path)}
+            saved = document["profiles"][0]["background"]
+            assert saved["mode"] == "image" and saved["imagePath"] == str(path)
             assert not editor.property("dirty")
             image = view.grabWindow()
             assert image.save(str(scratch / "webcamtuner-background.png"))
@@ -79,13 +80,17 @@ def exercise():
             stage = 2
         elif stage == 2 and "Cannot load" in editor.property("backgroundFeedback"):
             assert not editor.property("imageReady")
-            button = editor.findChild(QObject, "saveButton")
-            assert not button.property("enabled")
+            profile_file = scratch / "background-ui-profiles" / "profiles.json"
+            previous = profile_file.read_bytes()
+            evaluate("autosaveWhenReady()")
+            assert profile_file.read_bytes() == previous
             controller("read", [])
             stage = 3
         elif stage == 3 and editor.property("imageReady"):
             assert editor.property("imagePath") == str(path)
-            assert not editor.property("dirty")
+            if editor.property("dirty"):
+                QTimer.singleShot(100, exercise)
+                return
             stage = 4
             app.quit()
             return
@@ -98,4 +103,4 @@ QTimer.singleShot(200, exercise)
 app.exec()
 if failures or stage != 4:
     raise SystemExit("; ".join(failures) or "Incomplete UI check")
-print("PASS: selected image displayed, saved, restored; missing image reported and save disabled")
+print("PASS: selected image displayed, saved, restored; missing image reported and excluded from autosave")

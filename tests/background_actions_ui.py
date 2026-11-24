@@ -44,6 +44,9 @@ def exercise():
   QTest.mouseClick(v,Qt.LeftButton,Qt.NoModifier,point);QTest.keyClick(v,Qt.Key_A,Qt.ControlModifier)
   QGuiApplication.sendEvent(v,QKeyEvent(QEvent.KeyPress,0,Qt.NoModifier,'Blue sky'))
   QTest.keyClick(v,Qt.Key_Return);app.processEvents()
+  for _ in range(40):
+   if not ev('Object.keys(labelDrafts).length || labelInFlight !== null'):break
+   QTest.qWait(25)
   data=json.loads(ev('JSON.stringify(backgroundLibrary.items)'));assert next(i for i in data if i['id']==suffix)['label']=='Blue sky'
   assert Path(second['path']).exists() and next(i for i in data if i['id']==suffix)['name']==second['name']
   click('backgroundAction-lock-'+suffix);assert ev('backgroundLocked')

@@ -4,17 +4,27 @@ Public source: [zigmoo/webcamtuner](https://github.com/zigmoo/webcamtuner). Appl
 
 WebcamTuner supplies a user-customized composite camera stream to video consumers. Camera is the workspace for adjusting that same shared stream.
 
-In Camera, Start Camera or Preview camera starts the shared composite output and displays its preview after startup succeeds. Automatic startup uses the same path. Hide preview hides the local view while keeping consumers live. Stop Camera stops both preview and shared output. Closing the editor hides preview while shared output continues.
+In Camera, Start Camera starts the shared composite output and displays the preview when it is ready. Automatic startup follows the same path. Stop Camera stops both preview and shared output. Closing the editor leaves shared output running.
 
 Select WebcamTuner in each consumer. In Setup, Enable browser camera support saves the PipeWire feature for Brave or Chromium; fully quit and reopen that browser to activate it. The normal browser is not restarted automatically. Native Zoom uses the separate user-local adapter. Test each consumer’s camera menu and received frames; a local preview alone does not establish compatibility.
 
-Camera is the composition workspace: choose the remembered webcam, preview the composite, select Adjust: Camera or Background for the shared framing controls, and take a full-resolution processed snapshot. Use the three Drag to move grips beneath the preview to move Camera, Background and Label independently. The crop selection only controls cropping and zoom. Enable Show label, then double-click its preview text or choose Edit label to change it; Format controls font, bold, italic, ALL CAPS, size, color and opacity. Profiles and per-image appearance save automatically. Background contains image selection/import, captions and library management. Setup contains runtime, snapshot-mirror, Start/Stop output and native Zoom-adapter controls. Test shows independent PipeWire and V4L2 readbacks with measured receive FPS. About includes the version, author and source.
+Use **Camera** to choose a profile and camera, frame the live composite, and take full-resolution snapshots. The **Label**, **Crop & Mirror**, and **Person Mask** sections control text, framing, and the subject’s edge. Drag the Camera, Background, or Label grip to position that layer. In **Backgrounds**, choose or import an image, sample it with the eye icon, or open **Label…** to edit its text and placement. Profiles and per-image appearance save automatically. **Setup** contains runtime and integration settings, and **Setup → Test** shows independent PipeWire and V4L2 readbacks with measured receive FPS.
 
-Snapshots are kept in $XDG_DATA_HOME/webcamtuner/snapshots. The Setup checkbox Mirror snapshots to the OS screenshot folder defaults on; it adds a PNG copy to the Omasnap folder and recent-images shelf. Turning it off keeps snapshots local. Existing images in older snapshot folders are left intact. The OS-recents adapter currently targets Omasnap1.24 and uses Python QtCore support; copy/recents failures are reported without losing the local original.
+Snapshots are kept in $XDG_DATA_HOME/webcamtuner/snapshots. The Setup checkbox Mirror snapshots to the OS screenshot folder defaults on and adds a PNG copy to the system screenshots folder. The copy also appears in Recent Images with Omasnap 1.24.x and 1.26.2 when Python QtCore is available. Turning mirroring off skips the OS copy. If Revelator is running locally, WebcamTuner also registers snapshots as restricted personal media and prepares their URLs in the background.
 
 Setup lists the actual V4L2 capture devices and PipeWire video sources with their paths/node IDs and current WebcamTuner output identity. Open Zoom desktop launches the installed native Linux app; Teams/Meet/Chat retain the optional separate browser profile. App compatibility requires checking the consumer’s actual camera menu and received frames.
 
 Start Camera in Camera (also available in Setup) publishes the actual composite as WebcamTuner through your user PipeWire session. The desktop camera adapter prepares its signed matching library automatically in your home directory when output starts, and refreshes after PipeWire upgrades. Native Zoom’s user launcher connects automatically when Zoom is installed; reopen an already-running Zoom process to load a newly prepared adapter. Test reads the published pixels back through independent PipeWire and V4L2 consumers. Output continues when controls close; Stop Camera releases the camera and stops shared output. No sudo or kernel driver is required for this path. Native-app compatibility still requires a real check in each app, and live BRIO4K effects currently fall short of24/30fresh FPS on the development host. A separate synthetic diagnostic source remains available. Source capture resolution and measured preview FPS/backend are distinct; the preview shows live FPS and actual GPU/CPU use. Opening from any monitor's bar uses one shared floating editor, with remembered camera, saved mirror/autostart choice and draggable/resizable window controls.
+
+## Example composite
+
+**Full-resolution snapshot**
+
+![WebcamTuner snapshot with the camera subject in front of an orange sunset and the label “Larry’s Masterpiece”](assets/readme/sunset-composite.png)
+
+**Camera tab live preview**
+
+![WebcamTuner’s Camera tab showing the same sunset background, live preview, and composition controls](assets/readme/camera-tab-preview.png)
 
 ## Install
 
@@ -42,7 +52,7 @@ Removal deletes the plugin checkout. It leaves profiles and the user-local ONNX 
 
 ## Build and review
 
-Developer builds require Node.js22+, npm, Bun for bundling, Qt Multimedia, Quickshell and Omarchy. The Setup tab prepares Python processing dependencies for normal users. The GPL-3.0 Robust Video Matting MobileNetV3 model is bundled with its upstream license, release URL, and SHA256. Application source remains Apache-2.0; the model has its own GPL-3.0 license. Use Setup → Prepare WebcamTuner for the user-local runtime; developers can invoke bin/setup-preview as the same entry point. There are no runtime model downloads. webcam_tool is optional and needed only for remote inventory.
+Developer builds require Node.js22+, npm, Bun for bundling, Qt Multimedia, Quickshell and Omarchy. The Setup tab prepares Python processing dependencies for normal users. The GPL-3.0 Robust Video Matting MobileNetV3 model is bundled with its upstream license, release URL, and SHA256. Application source remains Apache-2.0; the model has its own GPL-3.0 license. Use Setup → Prepare WebcamTuner for the user-local runtime; developers can invoke bin/setup-preview as the same entry point. There are no runtime model downloads. webcam_tool is optional for local cameras and required for remote discovery and video capture.
 
 ```bash
 npm ci --ignore-scripts --no-audit --no-fund
@@ -70,7 +80,7 @@ For focused checks, set WEBCAMTUNER_TEST_ROOT to a disposable project-specific d
 
 Mirror is on by default, the opposite of the original unmirrored preview. Older profiles without a mirror field adopt the new default; an explicit saved choice is preserved. The checkbox saves its setting and verifies readback before changing orientation. Mirror changes preserve other unsaved draft settings. Mirror reflects the entire finished composite: camera/person, background and label, including their positions and label lettering. Preview, snapshots and the published camera use the same orientation. Dragging the camera, background or label follows the pointer in either mode; the label editing field stays readable while typing.
 
-The plugin opens a native Quickshell floating window. Drag the WebcamTuner heading to move it, or use normal window-manager move/resize controls. Clicking elsewhere does not dismiss it. The native Close button and Escape hide the window and stop the current preview. The standalone Preview.qml uses the same window component.
+The plugin opens a native Quickshell floating window. Drag the WebcamTuner heading to move it, or use normal window-manager move/resize controls. Clicking elsewhere does not dismiss it. The native Close button, Escape, and Q hide the window and stop the current preview. Q remains a typing key in text fields. The standalone Preview.qml uses the same window component.
 
 ## Virtual-camera output
 
@@ -143,3 +153,17 @@ Movement controls use fixed, labelled grips with36-pixel hit areas. Drag Camera 
 The desktop camera adapter checks the installed PipeWire version while output is running, even with the controls closed. Missing libraries and version upgrades trigger one automatic preparation attempt per version/start, separately from the camera producer. Failure is visible in Setup/Test and leaves PipeWire video running; **Repair camera adapter** retries. The matching package signature is verified before enabling its library. Readback works without native Zoom installed. **Use normal Zoom launcher** explicitly opts out of launcher integration and is preserved during automatic preparation; **Connect Zoom launcher** restores it. Preparation never restarts an active Zoom process.
 
 The user Zoom launcher also prepares the adapter before starting Zoom, so opening Zoom before camera output is supported. It waits up to60seconds for a concurrent installer; preparation failures still allow native Zoom to open with its normal devices.
+## Remote cameras — version 0.10.0 (DIL-3498)
+
+In Setup → General, enable **Show Remotes tab**. Open Remotes, select a computer, and choose its camera and quality. Refresh and Inspect cameras discover devices. Connect camera explicitly starts video. Auto prefers an advertised smooth mode and preserves aspect ratio. Streams are capped at 1280x720. The microphone stays off; remote audio routing is not part of this release.
+
+Connect opens a processed preview. Start Camera publishes the composed feed to apps. If output is already running, a new source is prepared in the background and replaces the old source only after it delivers frames. A failed connection retains the previous live source. Cancel connection cancels a pending replacement; Disconnect stops the remote source and its shared output. Closing a preview releases its capture; an explicitly started camera output retains the existing background-output lifecycle.
+
+SSH capture is owned by webcam_tool through its supported stream-plan schema 1 interface. WebcamTuner decodes that video into the existing compositor, so framing, backgrounds, snapshots and camera output share the same processing path as local sources. Stream plans never open cameras. The consumer maintains heartbeat stdin, and EOF or a 12-second remote timeout releases capture after process/network loss. Discovery does not change remote profiles or select a microphone. No public listening port, persistent remote server or media recording is created.
+
+Remote sources are saved with host plus a stable camera identity when Linux exposes by-id. They never silently follow a portable camera to a different host or reconnect automatically on panel open. Connect or Start Camera is explicit. macOS source enumeration is available, but its live capture remains unverified; do not treat Linux test results as macOS acceptance.
+
+Verification: both DIL-3494 removable Logitechs delivered fresh SSH video. A separate test publisher switched between them, retained the old source after a missing-camera request and switched back. Two independent PipeWire consumers received changing frames without replacing the publisher. Production camera output and profiles were not used as test fixtures. See task evidence for measured rates, startup time, gaps, checks and remaining platform limits.
+## Remotes navigation — 0.10.1
+
+Remotes is off by default and appears immediately before About when enabled. Browsing the tab leaves the current camera and live output in place until you explicitly connect. Developer UI tests cover discovery, source selection and navigation. The opt-in live test in `tests/remote_compositor_live.py` takes two test hosts and device paths through its environment variables and uses a separate publisher.

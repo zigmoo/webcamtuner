@@ -4,6 +4,7 @@ import Quickshell.Io
 import qs.Commons as Commons
 import "ui" as Tuner
 import "ui/BuildInfo.js" as BuildInfo
+import "BarServiceBridge.js" as BarServiceBridge
 
 Scope {
     id: root
@@ -16,6 +17,16 @@ Scope {
     function setup() { panel.openSetup() }
     function backgrounds() { panel.openBackgrounds() }
     function toggle() { opened ? close() : open() }
+    property var bridgePublication: null
+    Component.onCompleted: bridgePublication = BarServiceBridge.publish(widgetControls)
+    Component.onDestruction: BarServiceBridge.clear(bridgePublication)
+    QtObject {
+        id: widgetControls
+        readonly property bool opened: root.opened
+        function open() { root.open() }
+        function close() { root.close() }
+        function toggle() { root.toggle() }
+    }
     IpcHandler {
         target: "moo.webcamtuner"
         function open(): void { root.open() }
@@ -23,20 +34,11 @@ Scope {
         function setup(): void { panel.openSetup() }
         function backgrounds(): void { panel.openBackgrounds() }
         function camera(): void { panel.openCamera() }
+        function remotes(): void { panel.openRemotes() }
         function test(): void { panel.openTest() }
         function outputStart(): void { panel.editor.startCamera() }
         function outputStop(): void { panel.editor.outputControl.stop() }
         function consumers(): string { return JSON.stringify(panel.testPanel.consumerStatus()) }
-        function preview(enabled: bool): bool {
-            if(enabled && (!panel.editor.cameraChoiceReady || panel.editor.cameraIndex()<0 || panel.editor.sourceKind!=="local" || (panel.editor.backgroundMode==="image"&&!panel.editor.imageReady)))return false
-            if (enabled) panel.editor.startCamera()
-            else {
-                panel.editor.autostartRequested=false
-                panel.editor.resumeOutputPreview=false
-                panel.editor.previewOn=false
-            }
-            return true
-        }
         function toggle(): void { root.toggle() }
         function minimize(): void { if (root.opened && !panel.collapsed) panel.toggleCollapse() }
         function prepareUpdate(): string { return JSON.stringify(panel.editor.prepareUpdate()) }
@@ -48,8 +50,9 @@ Scope {
             catch (e) { return false }
         }
         function status(): string {
-            return JSON.stringify({ version: BuildInfo.version, section:panel.editor.section, opened: root.opened, collapsed: panel.collapsed, width: panel.width, height: panel.height,
+            return JSON.stringify({ version: BuildInfo.version, barBridgeWidgets: BarServiceBridge.listeners.size, section:panel.editor.section, opened: root.opened, collapsed: panel.collapsed, width: panel.width, height: panel.height,
                 busy: panel.editor.busy, dirty: panel.editor.dirty, message: panel.editor.message,
+                cameraSourceLabel: panel.editor.localSourceLabel, sourceKind: panel.editor.sourceKind, remotesVisible: panel.editor.remotesVisible, remoteHostCount: panel.editor.remoteHostCount, remoteCameraCount: panel.editor.remoteCameraCount,
                 mirror: panel.editor.mirror, autostartCamera: panel.editor.autostartCamera, previewOn: panel.editor.previewOn, previewReady:panel.editor.previewReady, processingBackend:panel.editor.captureFormat.provider||"",
                 autostartRequested:panel.editor.autostartRequested,processingReady:panel.editor.processingReady,cameraChoiceReady:panel.editor.cameraChoiceReady,camera:panel.editor.savedCamera,outputReady:panel.editor.outputControl.readyToStart,outputBusy:panel.editor.outputControl.busy,
                 sharedControls: true, draftRecovery: true, autosave: true, labelEditing:panel.editor.labelEditing, labelPending:panel.editor.labelInFlight!==null || Object.keys(panel.editor.labelDrafts).length>0, saving: panel.editor.savePending, saveFailed: panel.editor.saveFailed || panel.editor.labelSaveFailed, revision: panel.editor.document ? panel.editor.document.revision : -1, broadcasting: panel.editor.publishing })
@@ -59,5 +62,8 @@ Scope {
         id: panel
         color: Commons.Color.background
         accent: Commons.Color.accent
+        foreground: Commons.Color.foreground
+        warning: Commons.Color.warning
+        fontLanguage: Commons.I18n.language
     }
 }

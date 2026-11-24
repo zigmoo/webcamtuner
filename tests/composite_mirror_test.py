@@ -43,7 +43,7 @@ class CompositeMirror(unittest.TestCase):
                     'opacity': .75, 'color': '#a0ff30', 'fontSize': .07}},
         }
 
-    def render(self, settings):
+    def render_frames(self, settings, updates=()):
         frames, records = [], []
         frame, matte = self.frame, self.matte
         class Capture:
@@ -58,13 +58,22 @@ class CompositeMirror(unittest.TestCase):
             def push(self, image): frames.append(image.copy())
             def close(self): pass
         class Server:
-            def __init__(self, receive, stop): pass
-            def emit(self, value): records.append(value)
+            def __init__(self, receive, stop, background_preview=None):
+                self.receive = receive
+                self.pending = iter(updates)
+            def emit(self, value):
+                records.append(value)
+                if 'frame' in value and (update := next(self.pending, None)) is not None:
+                    self.receive(update)
             def close(self): pass
         with patch.object(preview, 'CameraCapture', Capture), patch.object(preview, 'Segmenter', Segmenter), \
                 patch.object(preview, 'load_background', return_value=self.background), \
                 patch('camera_stream.ControlServer', Server), patch('camera_stream.Publisher', Publisher):
-            preview.run(settings, frame_limit=1, publish=True)
+            preview.run(settings, frame_limit=1 + len(updates), publish=True)
+        return frames, records
+
+    def render(self, settings):
+        frames, records = self.render_frames(settings)
         record = next(r for r in records if 'frame' in r)
         panel = cv2.imdecode(np.frombuffer(base64.b64decode(record['frame']), np.uint8), cv2.IMREAD_COLOR)
         return frames[0], panel, record
@@ -85,6 +94,20 @@ class CompositeMirror(unittest.TestCase):
                 if mode == 'image':
                     self.assertEqual(normal_record['labelBitmap'], mirror_record['labelBitmap'])
                     self.assertGreater(float(np.abs(normal.astype(float)-cv2.resize(normal_panel, (1280,720))).mean()), .1)
+
+    def test_mask_defaults_and_adjustments_in_the_publisher(self):
+        self.matte[25:135, 30:34] = .5
+        adjusted = {**self.settings, 'configurationRevision': 1, 'personMask': {'softness': 8, 'tightness': 20}}
+        reset = {**self.settings, 'configurationRevision': 2, 'personMask': {'softness': 0, 'tightness': 0}}
+        frames, records = self.render_frames(self.settings, (adjusted, reset))
+        self.assertEqual([record['configurationRevision'] for record in records if 'frame' in record], [0, 1, 2])
+        baseline, softened, neutral = frames
+        np.testing.assert_array_equal(neutral, baseline)
+        loose = preview.tune_matte(self.matte, {'personMask': {'softness': 0, 'tightness': -50}})
+        tight = preview.tune_matte(self.matte, {'personMask': {'softness': 0, 'tightness': 50}})
+        self.assertGreater(loose[60, 31, 0], .5)
+        self.assertLess(tight[60, 31, 0], .5)
+        self.assertGreater(np.count_nonzero(softened != baseline), 0)
 
     def test_snapshot_reflects_background_person_and_label_as_one_scene(self):
         with tempfile.TemporaryDirectory(dir=os.environ['WEBCAMTUNER_TEST_ROOT']) as scratch, \

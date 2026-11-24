@@ -23,12 +23,23 @@ ShellRoot {
   expect(pointer.findChild(panel,"startTestOutput")!==null,"output controls exist below performance controls")
   scroll.contentItem.contentY=scroll.contentHeight-scroll.availableHeight
   expect(scroll.contentItem.contentY>500,"whole page can scroll to its bottom")
+  var zoom = pointer.findChild(panel,"restartZoomDialog")
+  expect(zoom!==null,"Zoom confirmation exists")
+  zoom.open()
+  verifyDialog.start()
+ }}
+ Timer { id:verifyDialog; interval:200; onTriggered:{
+  var panel=pointer.findChild(w.editor,"setupPanel")
+  var zoom=pointer.findChild(panel,"restartZoomDialog")
+  expect(zoom.visible && zoom.x>=16 && zoom.y>=16 && zoom.x+zoom.width<=zoom.parent.width-16
+    && zoom.y+zoom.height<=zoom.parent.height-16,"Zoom confirmation fits the window")
+  zoom.close()
   console.log("PASS: Setup uses full content height and one page scrollbar; output/help controls reachable")
   Qt.quit()
  }}
  Timer {interval:10000;running:true;onTriggered:Qt.exit(1)}
 }''')
-env=dict(os.environ,QT_QPA_PLATFORM='offscreen',QT_QUICK_BACKEND='software',WEBCAMTUNER_CONFIG_ROOT=str(scratch/'profiles'),XDG_DATA_HOME=str(scratch/'data'),XDG_CACHE_HOME=str(scratch/'cache'))
+env=dict(os.environ,QT_QPA_PLATFORM='offscreen',QT_QUICK_BACKEND='software',WEBCAMTUNER_CONFIG_ROOT=str(scratch/'profiles'),XDG_DATA_HOME=str(scratch/'data'),XDG_CONFIG_HOME=str(scratch/'config'),XDG_CACHE_HOME=str(scratch/'cache'))
 result=subprocess.run(['qs','-p',str(harness)],env=env,capture_output=True,text=True,timeout=15)
 output=result.stdout+result.stderr
 if result.returncode or 'PASS: Setup' not in output:raise SystemExit(output[-4000:])

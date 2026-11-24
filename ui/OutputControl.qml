@@ -4,6 +4,7 @@ import Quickshell.Io
 Item {
     id: root
     property var configuration: null
+    property bool adjustingBackground: false
     property int configurationRevision: 0
     property bool panelOpen: false
     property bool enabled: true
@@ -16,6 +17,7 @@ Item {
     property string cameraFeedback: ""
     readonly property bool cameraSwitching: published && !!configuration && !!state.camera && state.camera !== configuration.camera && (update.running || updateDelay.running)
     property var configuring: null
+    property bool updateSuperseded: false
     property string activeAction: ""
     property bool stopping: false
     readonly property bool startingCamera: startDelay.running || activeAction === "start-output"
@@ -36,10 +38,24 @@ Item {
     signal failed(string message)
     signal cameraRejected(string camera)
 
-    onConfigurationChanged: { configurationRevision++; if (enabled && published && configuration) updateDelay.restart() }
+    onConfigurationChanged: {
+        configurationRevision++
+        if (enabled && published && configuration && (!adjustingBackground || !updateDelay.running))
+            updateDelay.restart()
+    }
     onPanelOpenChanged: if (panelOpen&&enabled) { request("status"); request("zoom-status") }
     Component.onCompleted: Qt.callLater(function(){if(root.enabled){root.request("status");root.request("zoom-status")}})
-    onPublishedChanged: { if (!published) stopped(); else { if(enabled&&configuration)updateDelay.restart(); Qt.callLater(root.maybePrepareAdapter) } }
+    onPublishedChanged: {
+        if (!published) {
+            if (!state.serviceActive) stopped()
+        } else {
+            if (enabled && configuration) updateDelay.restart()
+            Qt.callLater(root.maybePrepareAdapter)
+        }
+    }
+    onStateChanged: {
+        if (state.state === "stopped" && !state.serviceActive && !startingCamera && !stopping) stopped()
+    }
     onAdapterChanged: Qt.callLater(root.maybePrepareAdapter)
     function maybePrepareAdapter() {
         if (!enabled || !published || !adapter.version || adapterPreparing) return
@@ -119,10 +135,13 @@ Item {
             }catch(e){if(root.adapterError==="")root.adapterError=String(e.message||e).slice(0,1200)}
         }
     }
-    Timer { id:updateDelay;interval:180;onTriggered:root.configure() }
+    Timer { id:updateDelay;interval:root.adjustingBackground ? 100 : 180;onTriggered:root.configure() }
     function configure() {
         if(!enabled || stopping || !published || !configuration)return
-        if(update.running){updateDelay.restart();return}
+        if(update.running){
+            if(configuring && configuring.camera!==configuration.camera){updateSuperseded=true;update.running=false}
+            updateDelay.restart();return
+        }
         configuring=Object.assign({},configuration,{configurationRevision:configurationRevision})
         if(state.camera && state.camera!==configuration.camera)cameraFeedback=qsTr("Switching camera…")
         update.command=["python3",pluginRoot+"/bin/stream-client.py","--configure",JSON.stringify(configuring),"--wait-applied"]
@@ -132,6 +151,7 @@ Item {
         id:update
         stdout:StdioCollector {id:updateResult;waitForEnd:true}
         onExited:function(code){
+            if(root.updateSuperseded){root.updateSuperseded=false;updateDelay.restart();return}
             try{
                 var result=JSON.parse(updateResult.text)
                 if(code!==0){

@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { readStore, saveStore, storePath, cropPixels } from './profiles.js'
 import { cameraAliases } from './cameras.js'
 
-const cli = Cli.create('webcamtuner', { version: '0.9.13', description: 'WebcamTuner preview: persist camera framing and background profiles. Preview autostart is a saved profile choice.' })
+const cli = Cli.create('webcamtuner', { version: '0.10.1', description: 'WebcamTuner preview: persist camera framing and background profiles. Preview autostart is a saved profile choice.' })
 cli.command('read', { description: 'Read profiles and their revision without starting capture', run: () => readStore() })
 cli.command('devices', { description: 'Read stable local webcam identifiers without opening a camera', run: () => ({ aliases: cameraAliases() }) })
 cli.command('save', {
@@ -86,15 +86,15 @@ cli.command('trash-background', {
   },
 })
 cli.command('remote', {
-  description: 'Inspect hosts or devices through the existing webcam_tool; never starts a viewer or remote capture',
+  description: 'Inspect remote computers or cameras without starting capture',
   options: z.object({ host: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9.-]{0,252}$/).optional() }),
   run: c => {
     const args = c.options.host ? ['devices', c.options.host, '--json'] : ['hosts', '--json']
-    return JSON.parse(execFileSync('webcam_tool', args, { encoding: 'utf8', timeout: 30000, maxBuffer: 1048576 }))
+    return JSON.parse(execFileSync('webcam_tool', args, { encoding: 'utf8', timeout: 50000, maxBuffer: 1048576 }))
   },
 })
 cli.command('doctor', {
   description: 'Report prototype capabilities and profile path',
-  run: () => ({ profiles: storePath(), cropPreview: true, profilePersistence: true, virtualCamera: 'user-session PipeWire; optional user-only V4L2 adapter for native Zoom', backgroundProcessing: 'shared compositor with independent consumer readbacks in Test', appAcceptance: 'requires verification in each actual app', matting: 'RVM MobileNetV3 with recurrent states', capture: 'largest supported 16:9 mode up to UHD 4K', output: '1280x720; nominal 30 fps; actual fresh FPS measured separately', previewDependencies: ['User-local Python runtime prepared from Setup', 'OpenCV', 'NumPy', 'Pillow', 'ONNX Runtime 1.31.0'], remoteDiscovery: 'optional webcam_tool adapter', remoteCapture: false }),
+  run: () => ({ profiles: storePath(), cropPreview: true, profilePersistence: true, virtualCamera: 'user-session PipeWire; optional user-only V4L2 adapter for native Zoom', backgroundProcessing: 'shared compositor with independent consumer readbacks in Test', appAcceptance: 'requires verification in each actual app', matting: 'RVM MobileNetV3 with recurrent states', capture: 'largest supported 16:9 mode up to UHD 4K', output: '1280x720; nominal 30 fps; actual fresh FPS measured separately', previewDependencies: ['User-local Python runtime prepared from Setup', 'OpenCV', 'NumPy', 'Pillow', 'ONNX Runtime 1.31.0'], remoteDiscovery: 'optional webcam_tool adapter', remoteCapture: true, remoteAudio: false, remoteTransport: "webcam_tool stream-plan schema 1; private SSH video" }),
 })
 cli.serve()
