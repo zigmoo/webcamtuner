@@ -1212,12 +1212,12 @@ Rectangle {
                             property point startPointer
 
                             onPressed: function(mouse) {
-                                startPointer = mapToItem(null, mouse.x, mouse.y)
+                                startPointer = mapToItem(stage, mouse.x, mouse.y)
                                 backgroundMoveHandle.beginPan()
                             }
                             onPositionChanged: function(mouse) {
                                 if (!pressed) return
-                                const point = mapToItem(null, mouse.x, mouse.y)
+                                const point = mapToItem(stage, mouse.x, mouse.y)
                                 backgroundMoveHandle.pan(point.x - startPointer.x, point.y - startPointer.y)
                             }
                             onReleased: backgroundMoveHandle.panning = false

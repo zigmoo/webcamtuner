@@ -170,12 +170,12 @@ Item {
             cursorShape: pressed ? Qt.ClosedHandCursor : Qt.OpenHandCursor
             property point startPointer
             onPressed: function(mouse) {
-                startPointer = mapToItem(null, mouse.x, mouse.y)
+                startPointer = mapToItem(root, mouse.x, mouse.y)
                 root.beginMove()
             }
             onPositionChanged: function(mouse) {
                 if (!pressed) return
-                const point = mapToItem(null, mouse.x, mouse.y)
+                const point = mapToItem(root, mouse.x, mouse.y)
                 root.moveBy(point.x - startPointer.x, point.y - startPointer.y)
             }
             onDoubleClicked: root.beginEditing()

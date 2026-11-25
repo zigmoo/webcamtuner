@@ -12,10 +12,24 @@ FloatingWindow {
     property alias bootstrap: bootstrap
     property alias bridge: bridge
     property alias testPanel: outputTests
+    readonly property int minimumInterfaceScale: 70
+    readonly property int maximumInterfaceScale: 150
+    readonly property int interfaceScaleStep: 10
+    readonly property int interfaceScalePercent: boundedInterfaceScale(preferences.interfaceScalePercent)
+    readonly property real interfaceScale: interfaceScalePercent / 100
+
+    function boundedInterfaceScale(percent) {
+        return Math.max(minimumInterfaceScale, Math.min(maximumInterfaceScale, percent))
+    }
+    function setInterfaceScale(percent) {
+        preferences.interfaceScalePercent = boundedInterfaceScale(percent)
+    }
+
     Settings {
         id: preferences
         location: StandardPaths.writableLocation(StandardPaths.ConfigLocation) + "/webcamtuner/ui.ini"
         property bool showRemotesTab: false
+        property int interfaceScalePercent: 100
     }
     ListModel {
         id: navigation
@@ -93,6 +107,7 @@ FloatingWindow {
         fontList.running = true
     }
     property bool collapsed: false
+    readonly property int collapsedHeight: Math.ceil(titlebar.height * interfaceScale)
     readonly property size openingSize: Qt.size(680, 700)
     property int expandedWidth: openingSize.width
     property int expandedHeight: openingSize.height
@@ -100,20 +115,21 @@ FloatingWindow {
     visible: false
     implicitWidth: expandedWidth
     implicitHeight: expandedHeight
-    minimumSize: Qt.size(540, collapsed ? 42 : 460)
-    maximumSize: Qt.size(16777215, collapsed ? 42 : 16777215)
+    minimumSize: Qt.size(540, collapsed ? collapsedHeight : 460)
+    maximumSize: Qt.size(16777215, collapsed ? collapsedHeight : 16777215)
     color: "#171c24"
     onCollapsedChanged: resizePalette.restart()
+    onInterfaceScaleChanged: if (collapsed) resizePalette.restart()
     Timer {
         id: resizePalette
         interval: 50
         onTriggered: {
             // FloatingWindow preferences do not resize an already visible native window.
             window.implicitWidth = window.expandedWidth
-            window.implicitHeight = window.collapsed ? 42 : window.expandedHeight
+            window.implicitHeight = window.collapsed ? window.collapsedHeight : window.expandedHeight
             if (!window.visible || Quickshell.env("QT_QPA_PLATFORM").indexOf("offscreen") !== -1) return
             Hyprland.dispatch('(function() local w=hl.get_window("title:^WebcamTuner$"); if w then return hl.dsp.window.resize({x='
-                + window.expandedWidth + ', y=' + (window.collapsed ? 42 : window.expandedHeight)
+                + window.expandedWidth + ', y=' + (window.collapsed ? window.collapsedHeight : window.expandedHeight)
                 + ', relative=false, window=w}) end; return hl.dsp.no_op() end)()')
         }
     }
@@ -151,6 +167,16 @@ FloatingWindow {
     }
     function closeEditor() { editor.previewOn = false; visible = false }
 
+    Shortcut {
+        sequences: ["Ctrl++", "Ctrl+="]
+        enabled: window.visible
+        onActivated: window.setInterfaceScale(window.interfaceScalePercent + window.interfaceScaleStep)
+    }
+    Shortcut {
+        sequence: "Ctrl+-"
+        enabled: window.visible
+        onActivated: window.setInterfaceScale(window.interfaceScalePercent - window.interfaceScaleStep)
+    }
     Shortcut {
         sequence: "Esc"
         enabled: window.visible
@@ -310,10 +336,42 @@ FloatingWindow {
         themeAccent: window.accent
         themeWarning: window.warning
     }
+    Scale {
+        id: interfaceTransform
+        xScale: window.interfaceScale
+        yScale: window.interfaceScale
+    }
     Item {
         id: themeSurface
         objectName: "tunerThemeSurface"
-        anchors.fill: parent
+        width: window.width / window.interfaceScale
+        height: window.height / window.interfaceScale
+        transform: interfaceTransform
+        readonly property Item popupOverlay: Window.window?.Overlay.overlay ?? null
+
+        // Popups and their dimmers share the surface's scaled coordinates.
+        function fitPopupOverlay() {
+            if (!popupOverlay) return
+            popupOverlay.width = width
+            popupOverlay.height = height
+        }
+        function configurePopupOverlay() {
+            if (popupOverlay) popupOverlay.transform = [interfaceTransform]
+            Qt.callLater(fitPopupOverlay)
+        }
+        onWidthChanged: Qt.callLater(fitPopupOverlay)
+        onHeightChanged: Qt.callLater(fitPopupOverlay)
+        onPopupOverlayChanged: configurePopupOverlay()
+        Component.onCompleted: configurePopupOverlay()
+        Connections {
+            target: themeSurface.popupOverlay
+            function onWidthChanged() {
+                if (target.width !== themeSurface.width) Qt.callLater(themeSurface.fitPopupOverlay)
+            }
+            function onHeightChanged() {
+                if (target.height !== themeSurface.height) Qt.callLater(themeSurface.fitPopupOverlay)
+            }
+        }
         palette.window: themeColors.window
         palette.base: themeColors.base
         palette.alternateBase: themeColors.alternateBase
@@ -448,6 +506,11 @@ FloatingWindow {
                     outputControl: editor.outputControl
                     popupPalette: themeColors
                     bootstrapControl: bootstrap
+                    interfaceScalePercent: window.interfaceScalePercent
+                    minimumInterfaceScale: window.minimumInterfaceScale
+                    maximumInterfaceScale: window.maximumInterfaceScale
+                    interfaceScaleStep: window.interfaceScaleStep
+                    onInterfaceScaleRequested: percent => window.setInterfaceScale(percent)
                     showRemotesTab: preferences.showRemotesTab
                     onRemotesTabVisibilityRequested: function(show) { window.setRemotesTabVisible(show) }
                 }

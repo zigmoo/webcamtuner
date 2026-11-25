@@ -62,12 +62,12 @@ Rectangle {
         property point startPointer
         onPressed: function(mouse) {
             root.forceActiveFocus()
-            startPointer = mapToItem(null, mouse.x, mouse.y)
+            startPointer = mapToItem(root.parent, mouse.x, mouse.y)
             root.movementStarted()
         }
         onPositionChanged: function(mouse) {
             if (!pressed) return
-            var point = mapToItem(null, mouse.x, mouse.y)
+            var point = mapToItem(root.parent, mouse.x, mouse.y)
             root.movementRequested(point.x - startPointer.x, point.y - startPointer.y)
         }
         onReleased: root.movementFinished()
