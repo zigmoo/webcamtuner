@@ -3,6 +3,7 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import QtQuick.Dialogs
 import QtMultimedia
+import QtCore
 import "CameraChoice.js" as CameraChoice
 
 Rectangle {
@@ -1670,7 +1671,7 @@ Rectangle {
                         }
                         busy: root.busy || root.libraryPending
                         actionsReady: root.cropInFlight === null && Object.keys(root.cropDrafts).length === 0 && root.labelInFlight===null && Object.keys(root.labelDrafts).length===0
-                        onAddRequested: imageDialog.open()
+                        onAddRequested: imageDialog.openForBackgrounds()
                         onOpenFolderRequested: Qt.openUrlExternally(root.backgroundUrl(root.backgroundLibrary.directory))
                         onRefreshRequested: root.refreshBackgrounds()
                         onSelected: function(path) { root.chooseBackground(path) }
@@ -1901,9 +1902,23 @@ Rectangle {
     }
     FileDialog {
         id: imageDialog
+        objectName: "backgroundImageDialog"
         title: qsTr("Add backgrounds to WebcamTuner")
         fileMode: FileDialog.OpenFiles
         nameFilters: [qsTr("Images (*.jpg *.jpeg *.png *.webp)")]
         onAccepted: root.addBackgrounds(selectedFiles.map(path => String(path)))
+
+        function openForBackgrounds() {
+            for (const name of ["Pictures", "pictures", "Screenshots", "screenshots"]) {
+                const folder = StandardPaths.locate(StandardPaths.HomeLocation, name, StandardPaths.LocateDirectory)
+                if (folder.toString() !== "") {
+                    currentFolder = folder
+                    open()
+                    return
+                }
+            }
+            currentFolder = StandardPaths.writableLocation(StandardPaths.HomeLocation)
+            open()
+        }
     }
 }
