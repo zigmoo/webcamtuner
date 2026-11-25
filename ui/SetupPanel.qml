@@ -22,7 +22,7 @@ Item {
     property string sourceMessage: ""
     property var outputControl: null
     property var bootstrapControl: null
-    property int interfaceScalePercent: 100
+    required property int interfaceScalePercent
     required property int minimumInterfaceScale
     required property int maximumInterfaceScale
     required property int interfaceScaleStep

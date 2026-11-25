@@ -12,11 +12,15 @@ FloatingWindow {
     property alias bootstrap: bootstrap
     property alias bridge: bridge
     property alias testPanel: outputTests
-    readonly property int minimumInterfaceScale: 70
+    readonly property int minimumInterfaceScale: 50
     readonly property int maximumInterfaceScale: 150
     readonly property int interfaceScaleStep: 10
     readonly property int interfaceScalePercent: boundedInterfaceScale(preferences.interfaceScalePercent)
     readonly property real interfaceScale: interfaceScalePercent / 100
+    readonly property size compactLayoutSize: Qt.size(540, 460)
+    readonly property real fittedInterfaceScale: interfaceScale * Math.min(1,
+        width > 0 ? width / compactLayoutSize.width : 1,
+        !collapsed && height > 0 ? height / compactLayoutSize.height : 1)
 
     function boundedInterfaceScale(percent) {
         return Math.max(minimumInterfaceScale, Math.min(maximumInterfaceScale, percent))
@@ -29,7 +33,7 @@ FloatingWindow {
         id: preferences
         location: StandardPaths.writableLocation(StandardPaths.ConfigLocation) + "/webcamtuner/ui.ini"
         property bool showRemotesTab: false
-        property int interfaceScalePercent: 100
+        property int interfaceScalePercent: 70
     }
     ListModel {
         id: navigation
@@ -107,29 +111,37 @@ FloatingWindow {
         fontList.running = true
     }
     property bool collapsed: false
-    readonly property int collapsedHeight: Math.ceil(titlebar.height * interfaceScale)
+    readonly property int collapsedHeight: Math.ceil(titlebar.height * fittedInterfaceScale)
     readonly property size openingSize: Qt.size(680, 700)
     property int expandedWidth: openingSize.width
     property int expandedHeight: openingSize.height
     title: "WebcamTuner"
     visible: false
     implicitWidth: expandedWidth
-    implicitHeight: expandedHeight
-    minimumSize: Qt.size(540, collapsed ? collapsedHeight : 460)
+    implicitHeight: collapsed ? collapsedHeight : expandedHeight
+    minimumSize: Qt.size(0, collapsed ? collapsedHeight : 0)
     maximumSize: Qt.size(16777215, collapsed ? collapsedHeight : 16777215)
     color: "#171c24"
     onCollapsedChanged: resizePalette.restart()
-    onInterfaceScaleChanged: if (collapsed) resizePalette.restart()
+    onInterfaceScaleChanged: if (collapsed) {
+        expandedWidth = Math.max(1, width)
+        resizePalette.restart()
+    }
     Timer {
         id: resizePalette
         interval: 50
         onTriggered: {
             // FloatingWindow preferences do not resize an already visible native window.
-            window.implicitWidth = window.expandedWidth
-            window.implicitHeight = window.collapsed ? window.collapsedHeight : window.expandedHeight
-            if (!window.visible || Quickshell.env("QT_QPA_PLATFORM").indexOf("offscreen") !== -1) return
+            if (!window.visible) return
+            const height = window.collapsed ? window.collapsedHeight : window.expandedHeight
+            if (Quickshell.env("QT_QPA_PLATFORM").indexOf("offscreen") !== -1) {
+                const nativeWindow = titlebar.Window.window
+                nativeWindow.width = window.expandedWidth
+                nativeWindow.height = height
+                return
+            }
             Hyprland.dispatch('(function() local w=hl.get_window("title:^WebcamTuner$"); if w then return hl.dsp.window.resize({x='
-                + window.expandedWidth + ', y=' + (window.collapsed ? window.collapsedHeight : window.expandedHeight)
+                + window.expandedWidth + ', y=' + height
                 + ', relative=false, window=w}) end; return hl.dsp.no_op() end)()')
         }
     }
@@ -165,7 +177,16 @@ FloatingWindow {
         editor.autostartRequested = false
         showSection("background")
     }
-    function closeEditor() { editor.previewOn = false; visible = false }
+    function rememberExpandedSize() {
+        if (collapsed || width <= 0 || height <= 0) return
+        expandedWidth = width
+        expandedHeight = height
+    }
+    function closeEditor() {
+        rememberExpandedSize()
+        editor.previewOn = false
+        visible = false
+    }
 
     Shortcut {
         sequences: ["Ctrl++", "Ctrl+="]
@@ -194,10 +215,8 @@ FloatingWindow {
     }
 
     function toggleCollapse() {
-        if (!collapsed) {
-            expandedWidth = Math.max(540, width)
-            expandedHeight = Math.max(460, height)
-        }
+        if (collapsed) expandedWidth = Math.max(1, width)
+        else rememberExpandedSize()
         collapsed = !collapsed
     }
 
@@ -259,9 +278,9 @@ FloatingWindow {
                 + 'local r=m.reserved or {}; width=width-(r.left or 0)-(r.right or 0); '
                 + 'height=height-(r.top or 0)-(r.bottom or 0); '
                 + 'hl.dispatch(hl.dsp.window.float({action="on",window=w})); '
-                + 'hl.dispatch(hl.dsp.window.resize({window=w,relative=false,x=math.max(540,math.min('
-                + window.openingSize.width + ',math.floor(width*0.92))),y=math.max(460,math.min('
-                + window.openingSize.height + ',math.floor(height*0.92)))})); '
+                + 'hl.dispatch(hl.dsp.window.resize({window=w,relative=false,x=math.max(1,math.min('
+                + window.expandedWidth + ',math.floor(width*0.92))),y=math.max(1,math.min('
+                + window.expandedHeight + ',math.floor(height*0.92)))})); '
                 + 'return hl.dsp.window.center({window=w}) end)()')
         }
     }
@@ -338,14 +357,14 @@ FloatingWindow {
     }
     Scale {
         id: interfaceTransform
-        xScale: window.interfaceScale
-        yScale: window.interfaceScale
+        xScale: window.fittedInterfaceScale
+        yScale: window.fittedInterfaceScale
     }
     Item {
         id: themeSurface
         objectName: "tunerThemeSurface"
-        width: window.width / window.interfaceScale
-        height: window.height / window.interfaceScale
+        width: window.width / window.fittedInterfaceScale
+        height: window.height / window.fittedInterfaceScale
         transform: interfaceTransform
         readonly property Item popupOverlay: Window.window?.Overlay.overlay ?? null
 

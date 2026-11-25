@@ -29,14 +29,17 @@ ShellRoot {
                 verifyVisualScale(1.2)
                 return
             }
-            compare(spinner.value, 100)
+            compare(spinner.value, 70)
+            verifyVisualScale(0.7)
             const output = JSON.stringify(window.editor.previewSettings())
             keyClick(Qt.Key_Plus, Qt.ControlModifier)
-            tryCompare(spinner, "value", 110)
-            verifyVisualScale(1.1)
+            tryCompare(spinner, "value", 80)
+            verifyVisualScale(0.8)
             keyClick(Qt.Key_Minus, Qt.ControlModifier)
-            tryCompare(spinner, "value", 100)
-            keyClick(Qt.Key_Equal, Qt.ControlModifier)
+            tryCompare(spinner, "value", 70)
+            keyClick(Qt.Key_Minus, Qt.ControlModifier)
+            tryCompare(spinner, "value", 60)
+            for (let index = 0; index < 5; index++) keyClick(Qt.Key_Equal, Qt.ControlModifier)
             tryCompare(spinner, "value", 110)
 
             wait(100)
@@ -62,16 +65,38 @@ ShellRoot {
             for (let index = 0; index < 6; index++) keyClick(Qt.Key_Plus, Qt.ControlModifier)
             tryCompare(spinner, "value", 150)
             verifyVisualScale(1.5)
-            for (let index = 0; index < 10; index++) keyClick(Qt.Key_Minus, Qt.ControlModifier)
-            tryCompare(spinner, "value", 70)
-            verifyVisualScale(0.7)
-            for (let index = 0; index < 5; index++) keyClick(Qt.Key_Equal, Qt.ControlModifier)
+            for (let index = 0; index < 11; index++) keyClick(Qt.Key_Minus, Qt.ControlModifier)
+            tryCompare(spinner, "value", 50)
+            verifyVisualScale(0.5)
+            for (let index = 0; index < 7; index++) keyClick(Qt.Key_Equal, Qt.ControlModifier)
             tryCompare(spinner, "value", 120)
             compare(JSON.stringify(window.editor.previewSettings()), output)
             verify(!window.editor.dirty)
             window.toggleCollapse()
             tryCompare(window, "height", Math.ceil(42 * 1.2))
             window.toggleCollapse()
+            tryCompare(window, "height", window.expandedHeight)
+
+            const nativeWindow = window.titleBar.Window.window
+            nativeWindow.width = 300
+            nativeWindow.height = 240
+            tryCompare(window, "width", 300)
+            tryCompare(window, "height", 240)
+            verifyVisualScale(1.2 * Math.min(300 / 540, 240 / 460))
+            compare(spinner.value, 120)
+            const spinnerEnd = spinner.mapToItem(null, spinner.width, spinner.height)
+            verify(spinnerEnd.x <= window.width && spinnerEnd.y <= window.height)
+
+            window.toggleCollapse()
+            tryCompare(window, "height", Math.ceil(42 * 1.2 * 300 / 540))
+            tryCompare(window, "width", 300)
+            window.toggleCollapse()
+            tryCompare(window, "height", 240)
+            tryCompare(window, "width", 300)
+            window.closeEditor()
+            window.openSetup()
+            tryCompare(window, "width", 300)
+            tryCompare(window, "height", 240)
         }
 
         function verifyVisualScale(scale) {
@@ -116,4 +141,4 @@ ShellRoot {
         output = result.stdout + result.stderr
         assert result.returncode == 0 and 'INTERFACE_SCALE_PASS' in output, output
 
-print('PASS: interface zoom shortcuts, Setup spinner, popup fit, collapse and persistence')
+print('PASS: 70% default, saved scale controls, popup fit, and compact-window resize and restore')
