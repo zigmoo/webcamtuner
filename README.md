@@ -1,6 +1,20 @@
 # WebcamTuner
 
-Public source: [zigmoo/webcamtuner](https://github.com/zigmoo/webcamtuner). Application source is licensed under Apache-2.0; the bundled Robust Video Matting model retains its separate GPL-3.0 license and provenance in models/rvm/. See [Install](#install) for first use through the plugin’s Setup tab. The [Build and review](#build-and-review) steps are for working in this source tree.
+## Install
+
+```bash
+omarchy plugin add https://github.com/zigmoo/webcamtuner.git --enable
+```
+
+## Remove
+
+```bash
+omarchy plugin remove moo.webcamtuner
+```
+
+Removal deletes the plugin checkout. It leaves profiles and the user-local ONNX Runtime in place.
+
+Public source: [zigmoo/webcamtuner](https://github.com/zigmoo/webcamtuner). Application source is licensed under Apache-2.0; the bundled Robust Video Matting model retains its separate GPL-3.0 license and provenance in models/rvm/. See [First run](#first-run) for first use through the plugin’s Setup tab. The [Build and review](#build-and-review) steps are for working in this source tree.
 
 WebcamTuner supplies a user-customized composite camera stream to video consumers. Camera is the workspace for adjusting that same shared stream.
 
@@ -16,17 +30,7 @@ Setup lists the actual V4L2 capture devices and PipeWire video sources with thei
 
 Start Camera in Camera (also available in Setup) publishes the actual composite as WebcamTuner through your user PipeWire session. The desktop camera adapter prepares its signed matching library automatically in your home directory when output starts, and refreshes after PipeWire upgrades. Native Zoom’s user launcher connects automatically when Zoom is installed; reopen an already-running Zoom process to load a newly prepared adapter. Test reads the published pixels back through independent PipeWire and V4L2 consumers. Output continues when controls close; Stop Camera releases the camera and stops shared output. No sudo or kernel driver is required for this path. Native-app compatibility still requires a real check in each app, and live BRIO4K effects currently fall short of24/30fresh FPS on the development host. A separate synthetic diagnostic source remains available. Source capture resolution and measured preview FPS/backend are distinct; the preview shows live FPS and actual GPU/CPU use. Opening from any monitor's bar uses one shared floating editor, with remembered camera, saved mirror/autostart choice and draggable/resizable window controls.
 
-## Example composite
-
-**Full-resolution snapshot**
-
-![WebcamTuner snapshot with the camera subject in front of an orange sunset and the label “Larry’s Masterpiece”](assets/readme/sunset-composite.png)
-
-**Camera tab live preview**
-
-![WebcamTuner’s Camera tab showing the same sunset background, live preview, and composition controls](assets/readme/camera-tab-preview.png)
-
-## Install
+## First run
 
 Add this repository in Omarchy’s plugin manager and enable WebcamTuner. The first open checks readiness and opens Setup when preparation is needed.
 
@@ -41,14 +45,6 @@ No build, pip, terminal or administrator commands are required after adding the 
 Supported desktop baseline: Omarchy/Arch with Python3, Python GObject/GStreamer desktop libraries, mise and an active user PipeWire session. Missing video plugins can be extracted from signed Arch packages matching the installed desktop into WebcamTuner’s private data directory. Packages are never installed system-wide, and package scripts are never run. A missing base desktop library or unavailable matching repository version is reported as unsupported; Setup does not silently request sudo. These paths are tested with empty WebcamTuner data/cache folders and hidden system plugins on the development host; a clean Omarchy VM release check remains pending.
 
 Profiles live under `$XDG_CONFIG_HOME/webcamtuner/profiles.json`. Backgrounds, snapshots, versioned processing runtimes and optional adapters live under `$XDG_DATA_HOME/webcamtuner`; generated controller builds live under `$XDG_CACHE_HOME/webcamtuner`. No npm dependencies or compiled artifacts are written into the installed plugin checkout during preparation.
-
-## Remove
-
-```bash
-omarchy plugin remove moo.webcamtuner
-```
-
-Removal deletes the plugin checkout. It leaves profiles and the user-local ONNX Runtime in place.
 
 ## Build and review
 
