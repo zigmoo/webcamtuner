@@ -73,20 +73,26 @@ def normal():
   bottom=top+grid.height()
   info=next(item for item in info_items(grid)
             if top+10<item.mapToScene(QPointF(13,13)).y()<bottom-10)
+  actions=info.parentItem()
+  image=actions.parentItem()
+  assert not actions.isVisible()
+  assert actions.y()==2 and image.width()-actions.x()-actions.width()==2
+  assert actions.width()==5*20+4
   icon_geometry=QQmlExpression(qmlContext(info),info,
-   'width === 26 && height === 26 && Math.abs(contentItem.width - 12.6) < 0.1'
-   ' && Math.abs(background.children[0].width - 18.2) < 0.1'
-   ' && Math.abs(background.children[0].color.a - 229/255) < 0.01').evaluate()
+   'width === 20 && height === 20 && contentItem.width === 14'
+   ' && Math.abs(background.color.a - 208/255) < 0.01').evaluate()
   assert icon_geometry[0] if isinstance(icon_geometry,tuple) else icon_geometry
   library=editor.findChild(QObject,'backgroundLibraryView')
   camera_requests=[]
   library.livePreviewRequested.connect(lambda: camera_requests.append(True))
-  QTest.mouseMove(v,info.mapToScene(QPointF(13,13)).toPoint());QTest.qWait(450)
+  QTest.mouseMove(v,info.mapToScene(QPointF(10,25)).toPoint());QTest.qWait(30)
+  assert actions.isVisible() and sum(item.isVisible() for item in info_items(grid))==1
+  QTest.mouseMove(v,info.mapToScene(QPointF(10,10)).toPoint());QTest.qWait(450)
   metadata=editor.findChild(QObject,'backgroundImageMetadata')
   assert metadata.isVisible() and '640 × 360 px · JPEG' in metadata.property('text')
   assert not camera_requests
   QTest.mouseMove(v,QPoint(2,2));QTest.qWait(30)
-  assert not metadata.isVisible()
+  assert not actions.isVisible() and not metadata.isVisible()
   point=label_button.mapToScene(QPointF(label_button.width()/2,label_button.height()/2)).toPoint()
   QTest.mouseClick(v,Qt.LeftButton,Qt.NoModifier,point)
   dialog=editor.findChild(QObject,'backgroundLabelDialog')

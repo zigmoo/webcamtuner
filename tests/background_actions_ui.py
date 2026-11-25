@@ -32,7 +32,9 @@ def find_visual(item,name):
  return None
 def click(name):
  item=find_visual(editor,name);assert item,name
- point=item.mapToScene(QPointF(item.width()/2,item.height()/2)).toPoint();QTest.mouseClick(v,Qt.LeftButton,Qt.NoModifier,point);app.processEvents()
+ point=item.mapToScene(QPointF(item.width()/2,item.height()/2)).toPoint()
+ QTest.mouseMove(v,point);QTest.qWait(25);assert item.isVisible(),name
+ QTest.mouseClick(v,Qt.LeftButton,Qt.NoModifier,point);app.processEvents()
 def exercise():
  global finished
  try:

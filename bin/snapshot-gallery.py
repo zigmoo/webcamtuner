@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""List WebcamTuner snapshots, copy images or paths, and open links in Revelator."""
+"""List, copy, and trash WebcamTuner snapshots or open links in Revelator."""
 import argparse
 import fcntl
 import hashlib
@@ -235,7 +235,7 @@ def open_revelator(link):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=('list', 'revelator', 'register-missing', 'copy-image', 'copy-path', 'copy-url', 'open-revelator'))
+    parser.add_argument('action', choices=('list', 'revelator', 'register-missing', 'copy-image', 'copy-path', 'copy-url', 'open-revelator', 'trash'))
     parser.add_argument('name', nargs='?')
     args = parser.parse_args()
     if args.action == 'revelator':
@@ -253,7 +253,14 @@ def main():
         file = os.fstat(image.fileno())
         if not valid_snapshot(file):
             raise ValueError('The selected snapshot is unavailable.')
-        if args.action == 'copy-image':
+        if args.action == 'trash':
+            try:
+                output(['gio', 'trash', '--', str(path)], timeout=15)
+            except subprocess.CalledProcessError as error:
+                raise ValueError(error.stderr.strip() or 'Could not move the snapshot to Trash.') from error
+            if os.path.lexists(path):
+                raise ValueError('The snapshot is still in the gallery folder.')
+        elif args.action == 'copy-image':
             copy_image(image)
         elif args.action == 'copy-path':
             copy_bytes(os.fsencode(path), 'text/plain')

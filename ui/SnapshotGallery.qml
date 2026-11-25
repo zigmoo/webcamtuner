@@ -65,6 +65,7 @@ ColumnLayout {
         onExited: function(code) {
             const action = command[2]
             const failure = action === "open-revelator" ? qsTr("Couldn’t open the snapshot in Revelator.")
+                : action === "trash" ? qsTr("Couldn’t move the snapshot to Trash.")
                 : qsTr("Couldn’t copy the snapshot.")
             try {
                 const result = JSON.parse(actionResult.text)
@@ -72,6 +73,9 @@ ColumnLayout {
                     root.feedback = result.error || failure
                 } else if (action === "open-revelator") {
                     root.feedback = ""
+                } else if (action === "trash") {
+                    root.feedback = qsTr("Snapshot moved to Trash.")
+                    root.refresh()
                 } else {
                     root.feedback = action === "copy-path" ? qsTr("Snapshot path copied.") : qsTr("Snapshot copied.")
                 }
@@ -122,6 +126,31 @@ ColumnLayout {
                 sourceSize: Qt.size(320, 180)
                 fillMode: Image.PreserveAspectCrop
                 asynchronous: true
+                clip: true
+                HoverHandler { id: imagePointer }
+                Row {
+                    anchors.top: parent.top
+                    anchors.right: parent.right
+                    anchors.margins: 2
+                    spacing: 1
+                    visible: imagePointer.hovered
+                    Repeater {
+                        model: [
+                            {kind: "copy", command: "copy-image", label: qsTr("Copy image")},
+                            {kind: "path", command: "copy-path", label: qsTr("Copy file path")},
+                            ...(root.revelator ? [{kind: "open", command: "open-revelator", label: qsTr("Open in Revelator")}] : []),
+                            {kind: "trash", command: "trash", label: qsTr("Move snapshot to Trash")}
+                        ]
+                        ThumbnailAction {
+                            required property var modelData
+                            objectName: modelData.command + "-" + card.modelData.name
+                            enabled: !snapshotAction.running
+                            Accessible.name: modelData.label
+                            kind: modelData.kind
+                            onClicked: root.runAction(modelData.command, card.modelData)
+                        }
+                    }
+                }
             }
             Label {
                 anchors.left: parent.left
@@ -132,36 +161,6 @@ ColumnLayout {
                 text: card.modelData.name.replace(/^WebcamTuner-/, "")
                 textFormat: Text.PlainText
                 color: root.palette.windowText
-            }
-            Row {
-                anchors.top: parent.top
-                anchors.right: parent.right
-                anchors.margins: 8
-                spacing: 2
-                Repeater {
-                    model: [
-                        {kind: "copy", command: "copy-image", label: qsTr("Copy image")},
-                        {kind: "path", command: "copy-path", label: qsTr("Copy file path")},
-                        ...(root.revelator ? [{kind: "open", command: "open-revelator", label: qsTr("Open in Revelator")}] : [])
-                    ]
-                    ToolButton {
-                        id: action
-                        required property var modelData
-                        objectName: modelData.command + "-" + card.modelData.name
-                        width: 26
-                        height: 26
-                        padding: 4
-                        enabled: !snapshotAction.running
-                        hoverEnabled: true
-                        Accessible.name: modelData.label
-                        ToolTip.text: modelData.label
-                        ToolTip.visible: hovered
-                        ToolTip.delay: 500
-                        contentItem: BackgroundActionIcon { kind: action.modelData.kind }
-                        background: Rectangle { color: action.hovered ? "#40536b" : "#d0171c24"; radius: 4 }
-                        onClicked: root.runAction(modelData.command, card.modelData)
-                    }
-                }
             }
         }
     }
