@@ -1,4 +1,4 @@
-# WebcamTuner
+Customize your camera feed before zoom, google meet or ms teams gets it.
 
 ## Install
 
