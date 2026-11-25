@@ -60,9 +60,14 @@ ShellRoot {
                 tryVerify(() => gallery.snapshots.length === 2)
                 const grid = findChild(gallery, "snapshotGrid")
                 tryVerify(() => grid.itemAtIndex(0) && grid.itemAtIndex(1))
-                const image = grid.itemAtIndex(0).children[0]
+                const card = grid.itemAtIndex(0)
+                const otherCard = grid.itemAtIndex(1)
+                compare(card.children.length, 1)
+                compare(otherCard.children.length, 1)
+                const image = card.children[0]
+                compare(card.height - image.y - image.height, 6)
                 const actions = image.children[0]
-                const otherActions = grid.itemAtIndex(1).children[0].children[0]
+                const otherActions = otherCard.children[0].children[0]
                 const trash = findChild(actions, "trash-WebcamTuner-2.jpg")
 
                 verify(!actions.visible && !otherActions.visible)
@@ -81,7 +86,7 @@ ShellRoot {
                 tryCompare(trash, "hovered", true)
                 verify(actions.visible)
                 fuzzyCompare(trash.background.color.a, 1, 0.01)
-                mouseMove(grid.itemAtIndex(0), 8, 110)
+                mouseMove(card, 3, 60)
                 tryCompare(actions, "visible", false)
 
                 mouseMove(image, 8, 32)
@@ -118,4 +123,4 @@ ShellRoot {
     assert (data / 'Trash/files' / removed.name).read_bytes() == original
     assert (data / 'Trash/info' / (removed.name + '.trashinfo')).is_file()
 
-print('PASS: hover-only snapshot controls, validated Trash action, gallery refresh, and recoverable original')
+print('PASS: caption-free snapshots, hover-only controls, validated Trash action, and gallery refresh')

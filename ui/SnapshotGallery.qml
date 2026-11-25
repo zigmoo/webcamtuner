@@ -121,7 +121,6 @@ ColumnLayout {
             Image {
                 anchors.fill: parent
                 anchors.margins: 6
-                anchors.bottomMargin: 26
                 source: card.modelData.thumbnail
                 sourceSize: Qt.size(320, 180)
                 fillMode: Image.PreserveAspectCrop
@@ -151,16 +150,6 @@ ColumnLayout {
                         }
                     }
                 }
-            }
-            Label {
-                anchors.left: parent.left
-                anchors.right: parent.right
-                anchors.bottom: parent.bottom
-                anchors.margins: 6
-                elide: Text.ElideRight
-                text: card.modelData.name.replace(/^WebcamTuner-/, "")
-                textFormat: Text.PlainText
-                color: root.palette.windowText
             }
         }
     }
