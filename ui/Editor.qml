@@ -1260,6 +1260,7 @@ Rectangle {
                         anchors.margins: 10
                     }
                     BackendIndicator {
+                        id: backendBadge
                         visible: fpsBadge.visible
                         provider: root.captureFormat.provider || ""
                         anchors.right: fpsBadge.right
@@ -1272,7 +1273,16 @@ Rectangle {
                         text: root.previewOn ? (processor.item && processor.item.frameUrl !== "" ? qsTr("Processed camera preview") : qsTr("Starting camera…")) : qsTr("Framing test card · camera off")
                         font.pixelSize: 10; font.bold: true; color: "#e9ecef"
                     }
-                    LabelText { visible: !root.draggingComposition; color: "#e9ecef"; anchors.right: parent.right; anchors.bottom: parent.bottom; anchors.margins: 12; text: root.zoom.toFixed(2) + "×"; font.bold: true }
+                    LabelText {
+                        objectName: "previewZoomIndicator"
+                        visible: !root.draggingComposition
+                        color: "#e9ecef"
+                        anchors.right: fpsBadge.right
+                        anchors.top: backendBadge.visible ? backendBadge.bottom : parent.top
+                        anchors.topMargin: backendBadge.visible ? 4 : 10
+                        text: root.zoom.toFixed(2) + "×"
+                        font.bold: true
+                    }
                 }
                 }
                 RowLayout {
