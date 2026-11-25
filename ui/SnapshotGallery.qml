@@ -97,18 +97,13 @@ ColumnLayout {
         text: listing.running ? qsTr("Loading snapshots…") : qsTr("No snapshots yet.")
         color: root.palette.placeholderText
     }
-    GridView {
+    ThumbnailGrid {
         id: grid
         objectName: "snapshotGrid"
         Layout.fillWidth: true
         Layout.preferredHeight: Math.min(264, contentHeight)
         visible: count > 0
-        clip: true
-        model: root.snapshots
-        cellWidth: width / Math.max(1, Math.floor(width / 150))
-        cellHeight: 132
-        boundsBehavior: Flickable.StopAtBounds
-        ScrollBar.vertical: VisibleScrollBar { policy: grid.contentHeight > grid.height ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff }
+        items: root.snapshots
 
         delegate: Rectangle {
             id: card

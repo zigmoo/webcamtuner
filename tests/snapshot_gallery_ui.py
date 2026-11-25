@@ -14,11 +14,12 @@ with tempfile.TemporaryDirectory(dir=os.environ['WEBCAMTUNER_TEST_ROOT']) as tem
     data = scratch / 'data'
     snapshots = data / 'webcamtuner/snapshots'
     snapshots.mkdir(parents=True)
-    removed = snapshots / 'WebcamTuner-2.jpg'
-    retained = snapshots / 'WebcamTuner-1.jpg'
-    mirror = scratch / 'WebcamTuner-2.png'
-    Image.new('RGB', (640, 360), 'blue').save(removed)
-    Image.new('RGB', (640, 360), 'red').save(retained)
+    removed = snapshots / 'WebcamTuner-6.jpg'
+    last = snapshots / 'WebcamTuner-1.jpg'
+    retained = snapshots / 'WebcamTuner-2.jpg'
+    mirror = scratch / 'WebcamTuner-6.png'
+    for index in range(1, 9):
+        Image.new('RGB', (640, 360), (32 * index - 1, 80, 90)).save(snapshots / f'WebcamTuner-{index}.jpg')
     with Image.open(removed) as image:
         image.save(mirror)
     original = removed.read_bytes()
@@ -41,7 +42,7 @@ import UI_PATH as Tuner
 ShellRoot {
     Window {
         width: 380
-        height: 270
+        height: 340
         visible: true
 
         Tuner.SnapshotGallery {
@@ -57,18 +58,21 @@ ShellRoot {
             when: false
 
             function exercise() {
-                tryVerify(() => gallery.snapshots.length === 2)
+                tryVerify(() => gallery.snapshots.length === 8)
                 const grid = findChild(gallery, "snapshotGrid")
-                tryVerify(() => grid.itemAtIndex(0) && grid.itemAtIndex(1))
-                const card = grid.itemAtIndex(0)
-                const otherCard = grid.itemAtIndex(1)
+                tryCompare(grid, "pendingScrollOffset", -1)
+                const rowOffset = grid.cellHeight
+                grid.contentY = grid.originY + rowOffset
+                tryVerify(() => grid.itemAtIndex(2) && grid.itemAtIndex(3))
+                const card = grid.itemAtIndex(2)
+                const otherCard = grid.itemAtIndex(3)
                 compare(card.children.length, 1)
                 compare(otherCard.children.length, 1)
                 const image = card.children[0]
                 compare(card.height - image.y - image.height, 6)
                 const actions = image.children[0]
                 const otherActions = otherCard.children[0].children[0]
-                const trash = findChild(actions, "trash-WebcamTuner-2.jpg")
+                const trash = findChild(actions, "trash-WebcamTuner-6.jpg")
 
                 verify(!actions.visible && !otherActions.visible)
                 compare(actions.spacing, 1)
@@ -92,9 +96,24 @@ ShellRoot {
                 mouseMove(image, 8, 32)
                 tryCompare(actions, "visible", true)
                 mouseClick(trash, 10, 10)
-                tryVerify(() => gallery.snapshots.length === 1)
-                compare(gallery.snapshots[0].name, "WebcamTuner-1.jpg")
+                tryVerify(() => gallery.snapshots.length === 7)
+                tryCompare(grid, "pendingScrollOffset", -1)
+                compare(grid.contentY - grid.originY, rowOffset)
                 compare(gallery.feedback, "Snapshot moved to Trash.")
+
+                const previousBottom = grid.contentHeight - grid.height
+                grid.contentY = grid.originY + previousBottom
+                tryVerify(() => grid.itemAtIndex(6) !== null)
+                const lastCard = grid.itemAtIndex(6)
+                const lastImage = lastCard.children[0]
+                const lastTrash = findChild(lastImage, "trash-WebcamTuner-1.jpg")
+                mouseMove(lastImage, 8, 32)
+                tryCompare(lastTrash, "visible", true)
+                mouseClick(lastTrash, 10, 10)
+                tryVerify(() => gallery.snapshots.length === 6)
+                tryCompare(grid, "pendingScrollOffset", -1)
+                compare(grid.contentY - grid.originY, previousBottom - grid.cellHeight)
+                verify(grid.atYEnd)
                 console.log("SNAPSHOT_GALLERY_PASS")
             }
         }
@@ -119,8 +138,8 @@ ShellRoot {
                             capture_output=True, timeout=15)
     output = result.stdout + result.stderr
     assert result.returncode == 0 and 'SNAPSHOT_GALLERY_PASS' in output, output
-    assert not removed.exists() and retained.is_file() and mirror.is_file()
+    assert not removed.exists() and not last.exists() and retained.is_file() and mirror.is_file()
     assert (data / 'Trash/files' / removed.name).read_bytes() == original
     assert (data / 'Trash/info' / (removed.name + '.trashinfo')).is_file()
 
-print('PASS: caption-free snapshots, hover-only controls, validated Trash action, and gallery refresh')
+print('PASS: snapshot hover and Trash preserve the visible row and clamp after the last row disappears')

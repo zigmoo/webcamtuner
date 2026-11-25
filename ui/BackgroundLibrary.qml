@@ -14,8 +14,6 @@ ColumnLayout {
     property int availableGridHeight: 360
     property bool watching: false
     property int refreshInterval: 15000
-    property real previousScroll: 0
-    property bool updating: false
     property bool initiallyPositioned: false
     property bool cameraLive: false
     property bool cameraStarting: false
@@ -172,14 +170,6 @@ ColumnLayout {
         if (index >= 0) grid.positionViewAtIndex(index, GridView.Contain)
     }
     onSelectedPathChanged: Qt.callLater(revealSelection)
-    onLibraryChanged: {
-        updating = true
-        Qt.callLater(function() {
-            grid.contentY = Math.max(0, Math.min(root.previousScroll, grid.contentHeight - grid.height))
-            if (!root.initiallyPositioned && root.library.items.length) { root.revealSelection(); root.initiallyPositioned = true }
-            root.updating = false
-        })
-    }
     FolderListModel {
         id: folder
         folder: root.watching && root.library.directory ? "file://" + root.library.directory.split("/").map(encodeURIComponent).join("/") : ""
@@ -253,21 +243,21 @@ ColumnLayout {
         wrapMode: Text.WordWrap
         Layout.fillWidth: true
     }
-    GridView {
+    ThumbnailGrid {
         id: grid
         objectName: "backgroundGrid"
-        onContentYChanged: if (!root.updating) root.previousScroll = contentY
         visible: root.library.items.length > 0
         Layout.fillWidth: true
         Layout.preferredHeight: Math.min(root.availableGridHeight, contentHeight)
-        clip: true
-        model: root.library.items
-        cellWidth: width / Math.max(1, Math.floor(width / 150))
-        cellHeight: 132
-        boundsBehavior: Flickable.StopAtBounds
+        items: root.library.items
+        onModelScrollRestored: {
+            if (!root.initiallyPositioned && count > 0) {
+                root.revealSelection()
+                root.initiallyPositioned = true
+            }
+        }
         keyNavigationEnabled: true
         activeFocusOnTab: true
-        ScrollBar.vertical: VisibleScrollBar { policy: grid.contentHeight > grid.height ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff }
         delegate: ItemDelegate {
             id: card
             required property var modelData
