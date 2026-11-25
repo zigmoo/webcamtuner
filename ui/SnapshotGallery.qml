@@ -65,13 +65,14 @@ ColumnLayout {
         onExited: function(code) {
             const action = command[2]
             const failure = action === "open-revelator" ? qsTr("Couldn’t open the snapshot in Revelator.")
+                : action === "preview" ? qsTr("Couldn’t preview the snapshot in Folio.")
                 : action === "trash" ? qsTr("Couldn’t move the snapshot to Trash.")
                 : qsTr("Couldn’t copy the snapshot.")
             try {
                 const result = JSON.parse(actionResult.text)
                 if (code !== 0) {
                     root.feedback = result.error || failure
-                } else if (action === "open-revelator") {
+                } else if (action === "open-revelator" || action === "preview") {
                     root.feedback = ""
                 } else if (action === "trash") {
                     root.feedback = qsTr("Snapshot moved to Trash.")
@@ -130,6 +131,7 @@ ColumnLayout {
                     visible: imagePointer.hovered
                     Repeater {
                         model: [
+                            {kind: "preview", command: "preview", label: qsTr("Preview snapshot in Folio")},
                             {kind: "copy", command: "copy-image", label: qsTr("Copy image")},
                             {kind: "path", command: "copy-path", label: qsTr("Copy file path")},
                             ...(root.revelator ? [{kind: "open", command: "open-revelator", label: qsTr("Open in Revelator")}] : []),

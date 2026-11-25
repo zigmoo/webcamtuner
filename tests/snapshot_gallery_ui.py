@@ -23,9 +23,18 @@ with tempfile.TemporaryDirectory(dir=os.environ['WEBCAMTUNER_TEST_ROOT']) as tem
     with Image.open(removed) as image:
         image.save(mirror)
     original = removed.read_bytes()
+    commands = scratch / 'commands'
+    commands.mkdir()
+    folio = commands / 'folio'
+    folio.write_text('#!/usr/bin/python3\nimport json, os, sys, time\nfrom pathlib import Path\n'
+                     'Path(os.environ["FOLIO_CAPTURE"]).write_text(json.dumps(sys.argv[1:]))\n'
+                     'time.sleep(0.15)\n')
+    folio.chmod(0o700)
+    capture = scratch / 'folio-args.json'
     env = dict(os.environ, QT_QPA_PLATFORM='offscreen', QT_QUICK_BACKEND='software',
                XDG_DATA_HOME=str(data), XDG_CACHE_HOME=str(scratch / 'cache'),
-               WEBCAMTUNER_SNAPSHOT_ROOT=str(snapshots))
+               WEBCAMTUNER_SNAPSHOT_ROOT=str(snapshots), FOLIO_CAPTURE=str(capture),
+               PATH=str(commands) + os.pathsep + os.environ['PATH'])
     helper = ['python3', str(root / 'bin/snapshot-gallery.py'), 'trash']
     symlink = snapshots / 'WebcamTuner-link.jpg'
     symlink.symlink_to(retained)
@@ -72,13 +81,14 @@ ShellRoot {
                 compare(card.height - image.y - image.height, 6)
                 const actions = image.children[0]
                 const otherActions = otherCard.children[0].children[0]
+                const eye = findChild(actions, "preview-WebcamTuner-6.jpg")
                 const trash = findChild(actions, "trash-WebcamTuner-6.jpg")
 
                 verify(!actions.visible && !otherActions.visible)
                 compare(actions.spacing, 1)
                 compare(actions.y, 2)
                 compare(image.width - actions.x - actions.width, 2)
-                compare(actions.width, 4 * 20 + 3)
+                compare(actions.width, 5 * 20 + 4)
                 compare(trash.width, 20)
                 compare(trash.contentItem.width, 14)
 
@@ -95,6 +105,12 @@ ShellRoot {
 
                 mouseMove(image, 8, 32)
                 tryCompare(actions, "visible", true)
+                mouseClick(eye, 10, 10)
+                tryCompare(trash, "enabled", false)
+                tryCompare(trash, "enabled", true)
+                compare(gallery.feedback, "")
+                mouseMove(trash, 10, 10)
+                tryCompare(trash, "hovered", true)
                 mouseClick(trash, 10, 10)
                 tryVerify(() => gallery.snapshots.length === 7)
                 tryCompare(grid, "pendingScrollOffset", -1)
@@ -127,7 +143,7 @@ ShellRoot {
                 test.exercise()
                 Qt.quit()
             } catch (error) {
-                console.error(error)
+                console.error(error, error.stack)
                 Qt.exit(1)
             }
         }
@@ -138,8 +154,9 @@ ShellRoot {
                             capture_output=True, timeout=15)
     output = result.stdout + result.stderr
     assert result.returncode == 0 and 'SNAPSHOT_GALLERY_PASS' in output, output
+    assert json.loads(capture.read_text()) == ['preview', str(removed)]
     assert not removed.exists() and not last.exists() and retained.is_file() and mirror.is_file()
     assert (data / 'Trash/files' / removed.name).read_bytes() == original
     assert (data / 'Trash/info' / (removed.name + '.trashinfo')).is_file()
 
-print('PASS: snapshot hover and Trash preserve the visible row and clamp after the last row disappears')
+print('PASS: the snapshot eye previews the original in Folio, and Trash preserves the visible row')
