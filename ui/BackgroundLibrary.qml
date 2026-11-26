@@ -14,8 +14,6 @@ ColumnLayout {
     property int availableGridHeight: 360
     property bool watching: false
     property int refreshInterval: 15000
-    property real previousScroll: 0
-    property bool updating: false
     property bool initiallyPositioned: false
     property bool cameraLive: false
     property bool cameraStarting: false
@@ -26,22 +24,6 @@ ColumnLayout {
     property var previewImage: null
     property bool showingImageInfo: false
     property bool haveLiveFrame: false
-    component ThumbnailAction: ToolButton {
-        id: actionControl
-        width: 26
-        height: 26
-        padding: 6.7
-        hoverEnabled: true
-        background: Item {
-            Rectangle {
-                anchors.centerIn: parent
-                width: parent.width * 0.7
-                height: parent.height * 0.7
-                radius: 3
-                color: actionControl.hovered ? "#40536b" : "#e5171c24"
-            }
-        }
-    }
     readonly property real toolbarHeight: toolbar.implicitHeight + spacing
     readonly property bool previewRunning: cameraLive && !cameraStopping
 
@@ -188,14 +170,6 @@ ColumnLayout {
         if (index >= 0) grid.positionViewAtIndex(index, GridView.Contain)
     }
     onSelectedPathChanged: Qt.callLater(revealSelection)
-    onLibraryChanged: {
-        updating = true
-        Qt.callLater(function() {
-            grid.contentY = Math.max(0, Math.min(root.previousScroll, grid.contentHeight - grid.height))
-            if (!root.initiallyPositioned && root.library.items.length) { root.revealSelection(); root.initiallyPositioned = true }
-            root.updating = false
-        })
-    }
     FolderListModel {
         id: folder
         folder: root.watching && root.library.directory ? "file://" + root.library.directory.split("/").map(encodeURIComponent).join("/") : ""
@@ -269,21 +243,21 @@ ColumnLayout {
         wrapMode: Text.WordWrap
         Layout.fillWidth: true
     }
-    GridView {
+    ThumbnailGrid {
         id: grid
         objectName: "backgroundGrid"
-        onContentYChanged: if (!root.updating) root.previousScroll = contentY
         visible: root.library.items.length > 0
         Layout.fillWidth: true
         Layout.preferredHeight: Math.min(root.availableGridHeight, contentHeight)
-        clip: true
-        model: root.library.items
-        cellWidth: width / Math.max(1, Math.floor(width / 150))
-        cellHeight: 132
-        boundsBehavior: Flickable.StopAtBounds
+        items: root.library.items
+        onModelScrollRestored: {
+            if (!root.initiallyPositioned && count > 0) {
+                root.revealSelection()
+                root.initiallyPositioned = true
+            }
+        }
         keyNavigationEnabled: true
         activeFocusOnTab: true
-        ScrollBar.vertical: VisibleScrollBar { policy: grid.contentHeight > grid.height ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff }
         delegate: ItemDelegate {
             id: card
             required property var modelData
@@ -300,28 +274,30 @@ ColumnLayout {
                     clip: true
                     Image { anchors.fill: parent; source: card.modelData.thumbnail; asynchronous: true; fillMode: Image.PreserveAspectCrop; sourceSize.width: 320; sourceSize.height: 180 }
                     BackgroundLabelOverlay { anchors.fill: parent; overlay: ({enabled: !!(card.modelData.overlay && card.modelData.overlay.enabled), opacity: card.modelData.overlay ? card.modelData.overlay.opacity : 0.75, text: card.modelData.label || card.modelData.name}) }
-                    ThumbnailAction {
-                        id: imageInfo
-                        objectName: "backgroundAction-info-" + card.modelData.id
-                        anchors.right: parent.right
-                        anchors.bottom: parent.bottom
-                        anchors.margins: 6
-                        Accessible.name: qsTr("Image metadata")
-                        contentItem: BackgroundActionIcon { kind: "info" }
-                        onHoveredChanged: {
-                            if (hovered) root.showPreview(imageInfo, card.modelData, true)
-                            else root.hidePreview(imageInfo)
-                        }
-                        onClicked: {
-                            root.showPreview(imageInfo, card.modelData, true)
-                            hoverDelay.stop()
-                            previewPopup.open()
-                        }
-                        Component.onDestruction: root.hidePreview(imageInfo)
-                    }
+                    HoverHandler { id: imagePointer }
                     Row {
-                        anchors.top: parent.top; anchors.right: parent.right; anchors.margins: 6
-                        spacing: 2
+                        anchors.top: parent.top
+                        anchors.right: parent.right
+                        anchors.margins: 2
+                        spacing: 1
+                        visible: imagePointer.hovered
+                        ThumbnailAction {
+                            id: imageInfo
+                            objectName: "backgroundAction-info-" + card.modelData.id
+                            Accessible.name: qsTr("Image metadata")
+                            kind: "info"
+                            showToolTip: false
+                            onHoveredChanged: {
+                                if (hovered) root.showPreview(imageInfo, card.modelData, true)
+                                else root.hidePreview(imageInfo)
+                            }
+                            onClicked: {
+                                root.showPreview(imageInfo, card.modelData, true)
+                                hoverDelay.stop()
+                                previewPopup.open()
+                            }
+                            Component.onDestruction: root.hidePreview(imageInfo)
+                        }
                         Repeater {
                             model: ["preview", "crop", "lock", "trash"]
                             ThumbnailAction {
@@ -332,9 +308,8 @@ ColumnLayout {
                                 objectName: "backgroundAction-" + modelData + "-" + image.id
                                 enabled: isPreview || (root.actionsReady && !root.busy && (modelData === "lock" || !image.locked))
                                 Accessible.name: isPreview ? qsTr("Preview this background") : modelData === "crop" ? qsTr("Crop background") : modelData === "trash" ? qsTr("Move background to Trash") : image.locked ? qsTr("Unlock background") : qsTr("Lock crop and protect from Trash")
-                                ToolTip.visible: hovered && !isPreview
-                                ToolTip.text: Accessible.name
-                                contentItem: BackgroundActionIcon { kind: parent.modelData === "lock" ? (parent.image.locked ? "locked" : "unlocked") : parent.modelData; ink: parent.enabled ? "#e9ecef" : "#7b8490" }
+                                kind: modelData === "lock" ? (image.locked ? "locked" : "unlocked") : modelData
+                                showToolTip: !isPreview
                                 onHoveredChanged: {
                                     if (!isPreview) return
                                     if (hovered) root.showPreview(actionButton, image)

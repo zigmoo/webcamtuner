@@ -22,6 +22,11 @@ Item {
     property string sourceMessage: ""
     property var outputControl: null
     property var bootstrapControl: null
+    required property int interfaceScalePercent
+    required property int minimumInterfaceScale
+    required property int maximumInterfaceScale
+    required property int interfaceScaleStep
+    signal interfaceScaleRequested(int percent)
     property bool showRemotesTab: false
     signal remotesTabVisibilityRequested(bool show)
     readonly property bool setupBusy: bootstrapControl!==null&&bootstrapControl.busy
@@ -111,6 +116,20 @@ Item {
         height: implicitHeight
         spacing: 16
         component Plain: Text { color: root.palette.windowText; textFormat: Text.PlainText; wrapMode: Text.WordWrap; Layout.fillWidth: true; font.pixelSize: 14 }
+        RowLayout {
+            Layout.fillWidth: true
+            Plain { text: qsTr("Interface scale") }
+            SpinBox {
+                objectName: "interfaceScaleSpinner"
+                from: root.minimumInterfaceScale
+                to: root.maximumInterfaceScale
+                stepSize: root.interfaceScaleStep
+                value: root.interfaceScalePercent
+                Accessible.name: qsTr("Interface scale")
+                textFromValue: function(value, locale) { return qsTr("%1%").arg(Number(value).toLocaleString(locale, 'f', 0)) }
+                onValueModified: root.interfaceScaleRequested(value)
+            }
+        }
         Plain { text:qsTr("Set up WebcamTuner");font.pixelSize:22;font.bold:true }
         Plain { text:qsTr("Prepare the controller and local processing libraries here. Setup downloads into your home directory; it does not ask for sudo, install a kernel driver or change Omarchy defaults. It does not start your camera.") }
         Repeater {

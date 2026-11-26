@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""List WebcamTuner snapshots, copy images or paths, and open links in Revelator."""
+"""List, preview, copy, and trash WebcamTuner snapshots or open links in Revelator."""
 import argparse
 import fcntl
 import hashlib
@@ -222,20 +222,20 @@ def copy_image(image):
     copy_bytes(data.getvalue(), 'image/png')
 
 
-def open_revelator(link):
-    opener = subprocess.Popen(['xdg-open', link], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+def open_window(command, failure):
+    opener = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                               stderr=subprocess.DEVNULL, start_new_session=True)
     try:
         if opener.wait(timeout=.25):
-            raise ValueError('Could not open Revelator in the default browser.')
+            raise ValueError(failure)
     except subprocess.TimeoutExpired:
-        # A freshly started browser can keep xdg-open alive until it exits.
+        # A viewer can stay running until its window closes.
         pass
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=('list', 'revelator', 'register-missing', 'copy-image', 'copy-path', 'copy-url', 'open-revelator'))
+    parser.add_argument('action', choices=('list', 'revelator', 'register-missing', 'preview', 'copy-image', 'copy-path', 'copy-url', 'open-revelator', 'trash'))
     parser.add_argument('name', nargs='?')
     args = parser.parse_args()
     if args.action == 'revelator':
@@ -253,7 +253,19 @@ def main():
         file = os.fstat(image.fileno())
         if not valid_snapshot(file):
             raise ValueError('The selected snapshot is unavailable.')
-        if args.action == 'copy-image':
+        if args.action == 'trash':
+            try:
+                output(['gio', 'trash', '--', str(path)], timeout=15)
+            except subprocess.CalledProcessError as error:
+                raise ValueError(error.stderr.strip() or 'Could not move the snapshot to Trash.') from error
+            if os.path.lexists(path):
+                raise ValueError('The snapshot is still in the gallery folder.')
+        elif args.action == 'preview':
+            folio = shutil.which('folio')
+            if folio is None:
+                raise ValueError('Folio is required to preview snapshots.')
+            open_window([folio, 'preview', str(path)], 'Could not open the snapshot in Folio.')
+        elif args.action == 'copy-image':
             copy_image(image)
         elif args.action == 'copy-path':
             copy_bytes(os.fsencode(path), 'text/plain')
@@ -262,7 +274,7 @@ def main():
             if args.action == 'copy-url':
                 copy_bytes(link.encode(), 'text/plain')
             else:
-                open_revelator(link)
+                open_window(['xdg-open', link], 'Could not open Revelator in the default browser.')
     return {}
 
 

@@ -168,6 +168,12 @@ def small():
   assert abs(editor.height()-bottom-scroll.x())<=1
   assert abs(editor.width()-scroll.x()-scroll.width()-scroll.x())<=1
   assert abs(scroll.property('availableWidth')-scroll.width())<=1
+  editor.setProperty('previewOn',True)
+  QTest.qWait(50)
+  backend=item('previewBackendIndicator');zoom_badge=item('previewZoomIndicator')
+  assert backend.isVisible() and zoom_badge.isVisible()
+  assert zoom_badge.y()==backend.y()+backend.height()+4
+  assert zoom_badge.x()+zoom_badge.width()==backend.x()+backend.width()
 
   finished=True;print('PASS: Camera viewport, hover help, collapsed controls, visible errors, and small-window scrolling')
  except Exception as error:failures.append(traceback.format_exc())

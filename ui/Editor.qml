@@ -3,6 +3,7 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import QtQuick.Dialogs
 import QtMultimedia
+import QtCore
 import "CameraChoice.js" as CameraChoice
 
 Rectangle {
@@ -1211,12 +1212,12 @@ Rectangle {
                             property point startPointer
 
                             onPressed: function(mouse) {
-                                startPointer = mapToItem(null, mouse.x, mouse.y)
+                                startPointer = mapToItem(stage, mouse.x, mouse.y)
                                 backgroundMoveHandle.beginPan()
                             }
                             onPositionChanged: function(mouse) {
                                 if (!pressed) return
-                                const point = mapToItem(null, mouse.x, mouse.y)
+                                const point = mapToItem(stage, mouse.x, mouse.y)
                                 backgroundMoveHandle.pan(point.x - startPointer.x, point.y - startPointer.y)
                             }
                             onReleased: backgroundMoveHandle.panning = false
@@ -1259,6 +1260,7 @@ Rectangle {
                         anchors.margins: 10
                     }
                     BackendIndicator {
+                        id: backendBadge
                         visible: fpsBadge.visible
                         provider: root.captureFormat.provider || ""
                         anchors.right: fpsBadge.right
@@ -1271,7 +1273,16 @@ Rectangle {
                         text: root.previewOn ? (processor.item && processor.item.frameUrl !== "" ? qsTr("Processed camera preview") : qsTr("Starting camera…")) : qsTr("Framing test card · camera off")
                         font.pixelSize: 10; font.bold: true; color: "#e9ecef"
                     }
-                    LabelText { visible: !root.draggingComposition; color: "#e9ecef"; anchors.right: parent.right; anchors.bottom: parent.bottom; anchors.margins: 12; text: root.zoom.toFixed(2) + "×"; font.bold: true }
+                    LabelText {
+                        objectName: "previewZoomIndicator"
+                        visible: !root.draggingComposition
+                        color: "#e9ecef"
+                        anchors.right: fpsBadge.right
+                        anchors.top: backendBadge.visible ? backendBadge.bottom : parent.top
+                        anchors.topMargin: backendBadge.visible ? 4 : 10
+                        text: root.zoom.toFixed(2) + "×"
+                        font.bold: true
+                    }
                 }
                 }
                 RowLayout {
@@ -1670,7 +1681,7 @@ Rectangle {
                         }
                         busy: root.busy || root.libraryPending
                         actionsReady: root.cropInFlight === null && Object.keys(root.cropDrafts).length === 0 && root.labelInFlight===null && Object.keys(root.labelDrafts).length===0
-                        onAddRequested: imageDialog.open()
+                        onAddRequested: imageDialog.openForBackgrounds()
                         onOpenFolderRequested: Qt.openUrlExternally(root.backgroundUrl(root.backgroundLibrary.directory))
                         onRefreshRequested: root.refreshBackgrounds()
                         onSelected: function(path) { root.chooseBackground(path) }
@@ -1901,9 +1912,23 @@ Rectangle {
     }
     FileDialog {
         id: imageDialog
+        objectName: "backgroundImageDialog"
         title: qsTr("Add backgrounds to WebcamTuner")
         fileMode: FileDialog.OpenFiles
         nameFilters: [qsTr("Images (*.jpg *.jpeg *.png *.webp)")]
         onAccepted: root.addBackgrounds(selectedFiles.map(path => String(path)))
+
+        function openForBackgrounds() {
+            for (const name of ["Pictures", "pictures", "Screenshots", "screenshots"]) {
+                const folder = StandardPaths.locate(StandardPaths.HomeLocation, name, StandardPaths.LocateDirectory)
+                if (folder.toString() !== "") {
+                    currentFolder = folder
+                    open()
+                    return
+                }
+            }
+            currentFolder = StandardPaths.writableLocation(StandardPaths.HomeLocation)
+            open()
+        }
     }
 }

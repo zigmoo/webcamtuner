@@ -32,7 +32,9 @@ def find_visual(item,name):
  return None
 def click(name):
  item=find_visual(editor,name);assert item,name
- point=item.mapToScene(QPointF(item.width()/2,item.height()/2)).toPoint();QTest.mouseClick(v,Qt.LeftButton,Qt.NoModifier,point);app.processEvents()
+ point=item.mapToScene(QPointF(item.width()/2,item.height()/2)).toPoint()
+ QTest.mouseMove(v,point);QTest.qWait(25);assert item.isVisible(),name
+ QTest.mouseClick(v,Qt.LeftButton,Qt.NoModifier,point);app.processEvents()
 def exercise():
  global finished
  try:
@@ -59,7 +61,23 @@ def exercise():
   assert ev('backgroundLibrary.items.length')==1 and editor.property('backgroundMode')=='blur'
   assert ev('foreground.x')==.2 and editor.property('dirty')
   assert len(list((scratch/'data/Trash/files').iterdir()))==1
-  finished=True;print('PASS: inline label, crop/lock/unlock/trash thumbnail actions; OS Trash, grid refresh and unrelated draft preservation')
+
+  folder=Path(ev('backgroundLibrary.directory'))
+  for index in range(18):
+   Image.new('RGB',(320,180),(index*13,60,90)).save(folder/f'Row-{index:02}.jpg')
+  controller('backgrounds',[])
+  v.resize(580,490);QTest.qWait(150)
+  grid=editor.findChild(QObject,'backgroundGrid')
+  columns=round(grid.width()/grid.property('cellWidth'))
+  row_offset=grid.property('cellHeight')
+  grid.setProperty('contentY',grid.property('originY')+row_offset)
+  QTest.qWait(60)
+  later=json.loads(ev('JSON.stringify(backgroundLibrary.items)'))[columns]
+  click('backgroundAction-trash-'+later['id'])
+  QTest.qWait(100)
+  assert not Path(later['path']).exists() and grid.property('count')==18
+  assert grid.property('contentY')-grid.property('originY')==row_offset
+  finished=True;print('PASS: background label, crop, lock and Trash actions, draft preservation, and scroll retention')
  except Exception as e:
   import traceback
   errors.append(traceback.format_exc())

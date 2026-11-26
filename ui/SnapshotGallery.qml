@@ -65,13 +65,18 @@ ColumnLayout {
         onExited: function(code) {
             const action = command[2]
             const failure = action === "open-revelator" ? qsTr("Couldn’t open the snapshot in Revelator.")
+                : action === "preview" ? qsTr("Couldn’t preview the snapshot in Folio.")
+                : action === "trash" ? qsTr("Couldn’t move the snapshot to Trash.")
                 : qsTr("Couldn’t copy the snapshot.")
             try {
                 const result = JSON.parse(actionResult.text)
                 if (code !== 0) {
                     root.feedback = result.error || failure
-                } else if (action === "open-revelator") {
+                } else if (action === "open-revelator" || action === "preview") {
                     root.feedback = ""
+                } else if (action === "trash") {
+                    root.feedback = qsTr("Snapshot moved to Trash.")
+                    root.refresh()
                 } else {
                     root.feedback = action === "copy-path" ? qsTr("Snapshot path copied.") : qsTr("Snapshot copied.")
                 }
@@ -93,18 +98,13 @@ ColumnLayout {
         text: listing.running ? qsTr("Loading snapshots…") : qsTr("No snapshots yet.")
         color: root.palette.placeholderText
     }
-    GridView {
+    ThumbnailGrid {
         id: grid
         objectName: "snapshotGrid"
         Layout.fillWidth: true
         Layout.preferredHeight: Math.min(264, contentHeight)
         visible: count > 0
-        clip: true
-        model: root.snapshots
-        cellWidth: width / Math.max(1, Math.floor(width / 150))
-        cellHeight: 132
-        boundsBehavior: Flickable.StopAtBounds
-        ScrollBar.vertical: VisibleScrollBar { policy: grid.contentHeight > grid.height ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff }
+        items: root.snapshots
 
         delegate: Rectangle {
             id: card
@@ -117,49 +117,34 @@ ColumnLayout {
             Image {
                 anchors.fill: parent
                 anchors.margins: 6
-                anchors.bottomMargin: 26
                 source: card.modelData.thumbnail
                 sourceSize: Qt.size(320, 180)
                 fillMode: Image.PreserveAspectCrop
                 asynchronous: true
-            }
-            Label {
-                anchors.left: parent.left
-                anchors.right: parent.right
-                anchors.bottom: parent.bottom
-                anchors.margins: 6
-                elide: Text.ElideRight
-                text: card.modelData.name.replace(/^WebcamTuner-/, "")
-                textFormat: Text.PlainText
-                color: root.palette.windowText
-            }
-            Row {
-                anchors.top: parent.top
-                anchors.right: parent.right
-                anchors.margins: 8
-                spacing: 2
-                Repeater {
-                    model: [
-                        {kind: "copy", command: "copy-image", label: qsTr("Copy image")},
-                        {kind: "path", command: "copy-path", label: qsTr("Copy file path")},
-                        ...(root.revelator ? [{kind: "open", command: "open-revelator", label: qsTr("Open in Revelator")}] : [])
-                    ]
-                    ToolButton {
-                        id: action
-                        required property var modelData
-                        objectName: modelData.command + "-" + card.modelData.name
-                        width: 26
-                        height: 26
-                        padding: 4
-                        enabled: !snapshotAction.running
-                        hoverEnabled: true
-                        Accessible.name: modelData.label
-                        ToolTip.text: modelData.label
-                        ToolTip.visible: hovered
-                        ToolTip.delay: 500
-                        contentItem: BackgroundActionIcon { kind: action.modelData.kind }
-                        background: Rectangle { color: action.hovered ? "#40536b" : "#d0171c24"; radius: 4 }
-                        onClicked: root.runAction(modelData.command, card.modelData)
+                clip: true
+                HoverHandler { id: imagePointer }
+                Row {
+                    anchors.top: parent.top
+                    anchors.right: parent.right
+                    anchors.margins: 2
+                    spacing: 1
+                    visible: imagePointer.hovered
+                    Repeater {
+                        model: [
+                            {kind: "preview", command: "preview", label: qsTr("Preview snapshot in Folio")},
+                            {kind: "copy", command: "copy-image", label: qsTr("Copy image")},
+                            {kind: "path", command: "copy-path", label: qsTr("Copy file path")},
+                            ...(root.revelator ? [{kind: "open", command: "open-revelator", label: qsTr("Open in Revelator")}] : []),
+                            {kind: "trash", command: "trash", label: qsTr("Move snapshot to Trash")}
+                        ]
+                        ThumbnailAction {
+                            required property var modelData
+                            objectName: modelData.command + "-" + card.modelData.name
+                            enabled: !snapshotAction.running
+                            Accessible.name: modelData.label
+                            kind: modelData.kind
+                            onClicked: root.runAction(modelData.command, card.modelData)
+                        }
                     }
                 }
             }

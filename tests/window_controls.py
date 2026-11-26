@@ -37,7 +37,7 @@ ShellRoot {
     beforeCollapse=visibilityChanges
     pointer.mouseClick(pointer.findChild(w.titleBar, "windowMinimizeButton"),16,16)
    } else if (phase === 1) {
-    expect(w.collapsed && w.height === 42, "collapse to titlebar")
+    expect(w.collapsed && w.height === w.collapsedHeight, "collapse to titlebar")
     expect(w.editor.previewOn && w.editor.dirty, "minimize retains preview and draft")
     expect(w.visible && visibilityChanges === beforeCollapse, "collapse must not hide/remap the window")
     if (++holdTicks < 12) return
