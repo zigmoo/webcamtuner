@@ -30,7 +30,7 @@ BarWidget {
         anchors.fill: parent
         bar: root.bar
         iconComponent: Component { Tuner.WebcamIcon { ink: button.active && button.useActiveColor ? button.activeColor : button.foreground } }
-        tooltipText: root.controller ? "WebcamTuner · framing and backgrounds" : "WebcamTuner · service unavailable"
+        tooltipText: root.controller ? qsTr("Custom post-camera composite feed with person mask, background, label & crops") : qsTr("WebcamTuner · service unavailable")
         onPressed: root.toggle()
     }
 }
